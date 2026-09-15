@@ -226,7 +226,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
                     var repo = System.Text.Json.JsonSerializer.Deserialize<StarredRepoRecord>(e.PayloadJson);
                     if (repo != null)
                     {
-                        await UpsertStarAsync(repo, ct);
+                        await ProjectStarAsync(repo, ct);
                     }
                 }
                 else if (e.Type == "save_ingested")
@@ -234,12 +234,32 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
                     var post = System.Text.Json.JsonSerializer.Deserialize<SavedPostRecord>(e.PayloadJson);
                     if (post != null)
                     {
-                        await UpsertSaveAsync(post, ct);
+                        await ProjectSaveAsync(post, ct);
                     }
                 }
                 yield return e;
             }
         }
+
+    // Projection-only writes (no event append) — used by RebuildAsync so replay
+    // never grows the event log. Ingest paths use AppendThenProjectAsync instead.
+    private async Task ProjectStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
+    {
+        await using var db = NewDbContext();
+        db.Database.ExecuteSqlRaw(
+            "INSERT INTO stars (RepoId, FullName, Description, TopicsJson, StarredAt) VALUES ({0}, {1}, {2}, {3}, {4}) " +
+            "ON CONFLICT(RepoId) DO UPDATE SET FullName=excluded.FullName, Description=excluded.Description, TopicsJson=excluded.TopicsJson, StarredAt=excluded.StarredAt;",
+            repo.RepoId, repo.FullName, repo.Description, repo.TopicsJson, repo.StarredAt.ToString("O"));
+    }
+
+    private async Task ProjectSaveAsync(SavedPostRecord post, CancellationToken ct = default)
+    {
+        await using var db = NewDbContext();
+        db.Database.ExecuteSqlRaw(
+            "INSERT INTO saves (CanonicalUrl, Title, TextExcerpt, IsStale, SavedAt) VALUES ({0}, {1}, {2}, {3}, {4}) " +
+            "ON CONFLICT(CanonicalUrl) DO UPDATE SET Title=excluded.Title, TextExcerpt=excluded.TextExcerpt, IsStale=excluded.IsStale, SavedAt=excluded.SavedAt;",
+            post.CanonicalUrl, post.Title, post.TextExcerpt, post.IsStale ? 1 : 0, post.SavedAt.ToString("O"));
+    }
 
     public async Task UpsertStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
         => await AppendThenProjectAsync(
