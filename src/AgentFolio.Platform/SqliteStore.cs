@@ -186,27 +186,85 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     }
 
     public async IAsyncEnumerable<StoredEvent> RebuildAsync(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            yield return new StoredEvent(
-                reader.GetInt64(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                DateTimeOffset.Parse(reader.GetString(3)));
+            // Phase 1: materialize the full event log with a short-lived read
+            // (never hold the reader open across writes — SQLite single-writer).
+            List<StoredEvent> events;
+            using (var readConn = new SqliteConnection(_connectionString))
+            {
+                await readConn.OpenAsync(ct);
+                await using var cmd = readConn.CreateCommand();
+                cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                var list = new List<StoredEvent>();
+                while (await reader.ReadAsync(ct))
+                {
+                    list.Add(new StoredEvent(reader.GetInt64(0), reader.GetString(1),
+                        reader.GetString(2), DateTimeOffset.Parse(reader.GetString(3))));
+                }
+                events = list;
+            }
+
+            // Phase 2: truncate + replay in per-event transactions (same write path
+            // as ingest — AppendThenProjectAsync owns its own connection/tx),
+            // idempotent by construction: full truncate then deterministic replay.
+            using (var conn = new SqliteConnection(_connectionString))
+            {
+                await conn.OpenAsync(ct);
+                using (var truncate = conn.CreateCommand())
+                {
+                    truncate.CommandText = "DELETE FROM saves; DELETE FROM stars;";
+                    await truncate.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            foreach (var e in events)
+            {
+                if (e.Type == "star_synced")
+                {
+                    var repo = System.Text.Json.JsonSerializer.Deserialize<StarredRepoRecord>(e.PayloadJson);
+                    if (repo != null)
+                    {
+                        await ProjectStarAsync(repo, ct);
+                    }
+                }
+                else if (e.Type == "save_ingested")
+                {
+                    var post = System.Text.Json.JsonSerializer.Deserialize<SavedPostRecord>(e.PayloadJson);
+                    if (post != null)
+                    {
+                        await ProjectSaveAsync(post, ct);
+                    }
+                }
+                yield return e;
+            }
         }
+
+    // Projection-only writes (no event append) — used by RebuildAsync so replay
+    // never grows the event log. Ingest paths use AppendThenProjectAsync instead.
+    private async Task ProjectStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
+    {
+        await using var db = NewDbContext();
+        db.Database.ExecuteSqlRaw(
+            "INSERT INTO stars (RepoId, FullName, Description, TopicsJson, StarredAt) VALUES ({0}, {1}, {2}, {3}, {4}) " +
+            "ON CONFLICT(RepoId) DO UPDATE SET FullName=excluded.FullName, Description=excluded.Description, TopicsJson=excluded.TopicsJson, StarredAt=excluded.StarredAt;",
+            repo.RepoId, repo.FullName, repo.Description, repo.TopicsJson, repo.StarredAt.ToString("O"));
+    }
+
+    private async Task ProjectSaveAsync(SavedPostRecord post, CancellationToken ct = default)
+    {
+        await using var db = NewDbContext();
+        db.Database.ExecuteSqlRaw(
+            "INSERT INTO saves (CanonicalUrl, Title, TextExcerpt, IsStale, SavedAt) VALUES ({0}, {1}, {2}, {3}, {4}) " +
+            "ON CONFLICT(CanonicalUrl) DO UPDATE SET Title=excluded.Title, TextExcerpt=excluded.TextExcerpt, IsStale=excluded.IsStale, SavedAt=excluded.SavedAt;",
+            post.CanonicalUrl, post.Title, post.TextExcerpt, post.IsStale ? 1 : 0, post.SavedAt.ToString("O"));
     }
 
     public async Task UpsertStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
         => await AppendThenProjectAsync(
             "star_synced",
-            System.Text.Json.JsonSerializer.Serialize(new { repo.RepoId, repo.FullName }),
+            System.Text.Json.JsonSerializer.Serialize(repo),
             (db) =>
             {
                 db.Database.ExecuteSqlRaw(
@@ -219,7 +277,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     public async Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default)
         => await AppendThenProjectAsync(
             "save_ingested",
-            System.Text.Json.JsonSerializer.Serialize(new { post.CanonicalUrl, post.Title }),
+            System.Text.Json.JsonSerializer.Serialize(post),
             (db) =>
             {
                 db.Database.ExecuteSqlRaw(
