@@ -23,5 +23,8 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <!-- af-11-aspire-k8s: Aspire pins (matches Aspire.AppHost.Sdk 13.5.3 from aspire-apphost template). -->
+    <PackageVersion Include="Aspire.Hosting.Kubernetes" Version="13.5.3-preview.1.26425.3" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.5.3" />
   </ItemGroup>
 </Project>
