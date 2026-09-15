@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Agents\AgentFolio.Agents.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Api\AgentFolio.Api.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Skills\Slices.Skills.csproj" />
   </ItemGroup>
 
   <ItemGroup>
