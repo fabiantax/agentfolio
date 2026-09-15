@@ -6,4 +6,16 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <!-- sqlite-vec native vec0 assets per RID (runtimes/linux-x64/native/vec0.so). -->
+    <PackageReference Include="HiraokaHyperTools.sqlite-vec" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
