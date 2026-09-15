@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": false,
+    "useDefineForClassFields": false,
+    "skipLibCheck": true,
+    "noEmit": false,
+    "outDir": "dist-tsc",
+    "isolatedModules": true
+  },
+  "include": ["src"]
+}
