@@ -12,19 +12,15 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Agents\AgentFolio.Agents.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Api\AgentFolio.Api.csproj" />
+    <ProjectReference Include="..\..\src\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\Slices\Saves\Slices.Saves.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Stars\Slices.Stars.csproj" />
   </ItemGroup>
 
   <ItemGroup>
