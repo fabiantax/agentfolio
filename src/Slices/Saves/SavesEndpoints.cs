@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using AgentFolio.Contracts;
 using AgentFolio.Slices.Saves;
 
@@ -73,22 +74,12 @@ public static class SavesEndpoints
 
                 // Append SaveIngested event BEFORE projection update, in same transaction
                 var payload = JsonSerializer.Serialize(new { canonicalUrl, item.Title });
-                await eventStore.AppendAsync(new AppendOnlyEvent
-                {
-                    Type = "save_ingested",
-                    PayloadJson = payload,
-                    OccurredAt = DateTimeOffset.UtcNow
-                }, ct);
+                await eventStore.AppendAsync(new AppendOnlyEvent(
+                    "save_ingested", payload, DateTimeOffset.UtcNow), ct);
 
                 // Now upsert the save record (this does the projection upsert in same tx)
-                var saveRecord = new AgentFolio.Contracts.SavedPostRecord
-                {
-                    CanonicalUrl = canonicalUrl,
-                    Title = item.Title,
-                    TextExcerpt = item.Excerpt,
-                    IsStale = false,
-                    SavedAt = DateTimeOffset.UtcNow
-                };
+                var saveRecord = new AgentFolio.Contracts.SavedPostRecord(
+                    canonicalUrl, item.Title, item.Excerpt, false, DateTimeOffset.UtcNow);
 
                 // Use UpsertSaveAsync which handles ON CONFLICT via existing pattern
                 await store.UpsertSaveAsync(saveRecord, ct);
