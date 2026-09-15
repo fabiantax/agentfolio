@@ -1,0 +1,276 @@
+{
+  "header": {
+    "version": 1,
+    "timestamp": "2026-09-15T14:36:16.837411964+00:00",
+    "commit_sha": "05abd705521541e7b79eb96ce3c4264edce9150b",
+    "atlas_version": "0.2.126"
+  },
+  "graph_metrics": {
+    "node_count": 44,
+    "edge_count": 27,
+    "density": 0.01427061310782241,
+    "avg_degree": 1.2272727272727273
+  },
+  "dead_code": [
+    {
+      "function_name": "UnitTest1.UnitTest1.Test1",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line": 6,
+      "reason": "Not reachable from any entry point"
+    },
+    {
+      "function_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs::Test1",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line": 5,
+      "reason": "Unwired feature (has outgoing calls but unreachable)"
+    },
+    {
+      "function_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs:7",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line": 7,
+      "reason": "Not reachable from any entry point"
+    }
+  ],
+  "coupling": [
+    {
+      "module": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "incoming_coupling": 5.0,
+      "outgoing_coupling": 2.0,
+      "afferent": 5,
+      "efferent": 2
+    }
+  ],
+  "scc": {
+    "has_cycles": false,
+    "scc_count": 44,
+    "largest_scc_size": 1
+  },
+  "pagerank": [
+    {
+      "node_name": "./src/Slices/Chat/Placeholder.cs:4",
+      "score": 0.046304996546000315,
+      "rank": 1
+    },
+    {
+      "node_name": "UnitTest1.UnitTest1.Test1",
+      "score": 0.044864820286068134,
+      "rank": 2
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs:32",
+      "score": 0.03615161441457605,
+      "rank": 3
+    },
+    {
+      "node_name": "./src/AgentFolio.Platform/Class1.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 4
+    },
+    {
+      "node_name": "./src/AgentFolio.Contracts/Class1.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 5
+    },
+    {
+      "node_name": "./src/AgentFolio.Agents/Class1.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 6
+    },
+    {
+      "node_name": "./src/Slices/Skills/Placeholder.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 7
+    },
+    {
+      "node_name": "./src/Slices/Stars/Placeholder.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 8
+    },
+    {
+      "node_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs:4",
+      "score": 0.03615161441457605,
+      "rank": 9
+    },
+    {
+      "node_name": "Class1.Class1",
+      "score": 0.0259982322831518,
+      "rank": 10
+    },
+    {
+      "node_name": "UnitTest1.UnitTest1",
+      "score": 0.0259982322831518,
+      "rank": 11
+    },
+    {
+      "node_name": "Placeholder.Class1",
+      "score": 0.0259982322831518,
+      "rank": 12
+    },
+    {
+      "node_name": "./src/Slices/Saves/Placeholder.cs:4",
+      "score": 0.0259982322831518,
+      "rank": 13
+    },
+    {
+      "node_name": "Program.WeatherForecast",
+      "score": 0.0259982322831518,
+      "rank": 14
+    },
+    {
+      "node_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs:7",
+      "score": 0.02437891154446694,
+      "rank": 15
+    },
+    {
+      "node_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs::Test1",
+      "score": 0.024296055686837424,
+      "rank": 16
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs:18",
+      "score": 0.020025666799594312,
+      "rank": 17
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs:16",
+      "score": 0.020025666799594312,
+      "rank": 18
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs:19",
+      "score": 0.020025666799594312,
+      "rank": 19
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs:17",
+      "score": 0.020025666799594312,
+      "rank": 20
+    },
+    {
+      "node_name": "./src/AgentFolio.Api/Program.cs::Program",
+      "score": 0.014053101316036824,
+      "rank": 21
+    },
+    {
+      "node_name": "./src/Slices/Skills/Placeholder.cs::Slices.Skills",
+      "score": 0.014053101316036824,
+      "rank": 22
+    },
+    {
+      "node_name": "./src/Slices/Stars/Placeholder.cs::Slices.Stars",
+      "score": 0.014053101316036824,
+      "rank": 23
+    },
+    {
+      "node_name": "./src/Slices/Stars/Placeholder.cs::Placeholder",
+      "score": 0.014053101316036824,
+      "rank": 24
+    },
+    {
+      "node_name": "./src/AgentFolio.Agents/Class1.cs::Class1",
+      "score": 0.014053101316036824,
+      "rank": 25
+    },
+    {
+      "node_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs::AgentFolio.UnitTests",
+      "score": 0.014053101316036824,
+      "rank": 26
+    },
+    {
+      "node_name": "./src/Slices/Saves/Placeholder.cs::Slices.Saves",
+      "score": 0.014053101316036824,
+      "rank": 27
+    },
+    {
+      "node_name": "./src/Slices/Chat/Placeholder.cs::Placeholder",
+      "score": 0.014053101316036824,
+      "rank": 28
+    },
+    {
+      "node_name": "./src/Slices/Chat/Placeholder.cs::Slices.Chat",
+      "score": 0.014053101316036824,
+      "rank": 29
+    },
+    {
+      "node_name": "./src/AgentFolio.Platform/Class1.cs::Class1",
+      "score": 0.014053101316036824,
+      "rank": 30
+    },
+    {
+      "node_name": "./src/AgentFolio.Contracts/Class1.cs::AgentFolio.Contracts",
+      "score": 0.014053101316036824,
+      "rank": 31
+    },
+    {
+      "node_name": "./src/AgentFolio.Agents/Class1.cs::AgentFolio.Agents",
+      "score": 0.014053101316036824,
+      "rank": 32
+    },
+    {
+      "node_name": "./src/Slices/Saves/Placeholder.cs::Placeholder",
+      "score": 0.014053101316036824,
+      "rank": 33
+    },
+    {
+      "node_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs::UnitTest1",
+      "score": 0.014053101316036824,
+      "rank": 34
+    },
+    {
+      "node_name": "./src/Slices/Skills/Placeholder.cs::Placeholder",
+      "score": 0.014053101316036824,
+      "rank": 35
+    },
+    {
+      "node_name": "./src/AgentFolio.Contracts/Class1.cs::Class1",
+      "score": 0.014053101316036824,
+      "rank": 36
+    },
+    {
+      "node_name": "./src/AgentFolio.Platform/Class1.cs::AgentFolio.Platform",
+      "score": 0.014053101316036824,
+      "rank": 37
+    }
+  ],
+  "function_metrics": [
+    {
+      "function_name": "UnitTest1.UnitTest1.Test1",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line_start": 6,
+      "cyclomatic": 1,
+      "cognitive": 0,
+      "loc": 0,
+      "coupling_in": 3,
+      "coupling_out": 0,
+      "pagerank": 0.044864820286068134,
+      "in_cycle": false,
+      "is_dead_code": false
+    },
+    {
+      "function_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs::Test1",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line_start": 5,
+      "cyclomatic": 1,
+      "cognitive": 1,
+      "loc": 5,
+      "coupling_in": 1,
+      "coupling_out": 2,
+      "pagerank": 0.024296055686837424,
+      "in_cycle": false,
+      "is_dead_code": false
+    },
+    {
+      "function_name": "./tests/AgentFolio.UnitTests/UnitTest1.cs:7",
+      "file_path": "./tests/AgentFolio.UnitTests/UnitTest1.cs",
+      "line_start": 7,
+      "cyclomatic": 1,
+      "cognitive": 0,
+      "loc": 0,
+      "coupling_in": 1,
+      "coupling_out": 0,
+      "pagerank": 0.02437891154446694,
+      "in_cycle": false,
+      "is_dead_code": false
+    }
+  ]
+}

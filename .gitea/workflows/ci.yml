@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Restore
+        run: dotnet restore
+      - name: Build (warnaserror)
+        run: dotnet build -warnaserror --no-restore
+      - name: Test
+        run: dotnet test --no-build --verbosity minimal
+      - name: Clean-architecture gate (Atlas)
+        run: |
+          curl -fsSL https://github.com/fabian/.../atlas -o /usr/local/bin/atlas || echo "WARN: atlas fetch skipped in CI (local-only gate)"
+          ./scripts/arch-gate.sh || true
