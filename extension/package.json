@@ -1,0 +1,22 @@
+{
+  "name": "agentfolio-linkedin-saves",
+  "version": "0.1.0",
+  "description": "Harvest LinkedIn saved posts into AgentFolio.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.42",
+    "linkedom": "^0.18.5",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "wxt": "^0.20.0"
+  }
+}

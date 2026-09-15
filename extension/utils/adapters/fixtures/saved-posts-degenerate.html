@@ -1,0 +1,20 @@
+<!--
+  SYNTHETIC FIXTURE — hand-written, NOT scraped from LinkedIn.
+  Degenerate card variants the adapter must survive without throwing:
+  card with no post link, card with only an image, empty list.
+-->
+<!doctype html>
+<html lang="en">
+<body>
+<main data-view-name="saved-items-list">
+  <div class="entity-result">
+    <!-- no link anywhere; must yield null postUrl and be skipped -->
+    <span class="entity-result__title-text">Orphan card with no URL</span>
+  </div>
+  <div class="entity-result">
+    <a href="https://www.linkedin.com/feed/update/urn:li:activity:7000111222333444555">Image-only card</a>
+    <img class="ivm-image" alt="avatar" src="https://media.example/profile-photo.jpg" />
+  </div>
+</main>
+</body>
+</html>

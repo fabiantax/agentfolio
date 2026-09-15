@@ -1,0 +1,60 @@
+<!--
+  SYNTHETIC FIXTURE — hand-written, NOT scraped from LinkedIn.
+  Modeled on linkedin.com/my-items/saved-posts/ DOM structure:
+  main[data-view-name] list containing entity-result cards.
+-->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Saved posts | LinkedIn</title></head>
+<body>
+<main data-view-name="saved-items-list" aria-label="Saved posts">
+  <div class="saves-items-list">
+    <!-- Card 1: full-fidelity entity-result card -->
+    <div class="entity-result" data-chameleon-result-urn="urn:li:bookmarkCluster:(FSRV,activity-7123456789012345678-abcd)">
+      <div class="entity-result__universal-card">
+        <div class="entity-result__content">
+          <div class="entity-result__title-line">
+            <span class="entity-result__title-text t-16 t-black t-bold">
+              <a href="https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678?li_ucat=12ab&trackingId=xyz123&origin=SAVED_ITEMS&trk=clipboard"
+                 class="app-aware-link"
+                 data-tracking-control-name="saved_items_entity">Senior Rust engineer at Acme — architecture notes</a>
+            </span>
+          </div>
+          <div class="entity-result__primary-subtitle t-14 t-black t-normal">
+            <span class="tvm__text">Dr. Elena Vasquez</span>
+          </div>
+          <div class="entity-result__subtitle">
+            <time datetime="2026-09-01">Saved 2 weeks ago</time>
+          </div>
+          <div class="entity-result__summary t-14 t-black--light">
+            <p>We moved graph traversal from BFS to a frontier-batched PageRank and cut p99 latency 40x. Full write-up in the repo.</p>
+          </div>
+        </div>
+        <!-- profile image we must NEVER harvest -->
+        <img class="entity-result__universal-image ivm-image" alt="Elena Vasquez profile photo"
+             src="https://media.licdn.example/dms/image/profile-elena/shrink_800_800/secret" />
+      </div>
+    </div>
+
+    <!-- Card 2: feed-shared variant with already-clean URL and query worth keeping -->
+    <div class="entity-result">
+      <div class="feed-shared-update-v2">
+        <div class="update-v2-social-activity__person-name">Marcus Chen</div>
+        <div class="feed-shared-update-v2__description">
+          <span class="break-words t-14 t-black--light">Shipping notes from our Strix Halo llama.cpp rollout: MoE offload benchmarks inside.</span>
+        </div>
+        <a class="app-aware-link" href="https://www.linkedin.com/posts/marcuschen/llamacpp-rocm-activity-7198765432109876543-ef12?utm_source=share&utm_medium=member_desktop&midToken=AQFG&eid=77">Benchmark thread: llama.cpp on Strix Halo</a>
+        <time datetime="2026-09-10">Saved 3 days ago</time>
+      </div>
+    </div>
+
+    <!-- Card 3: minimal/rotated-class card (no summary, relative href) -->
+    <div class="entity-result" data-view-name="saved-item">
+      <h3 class="hashed-rotated-class-9f3a">Q3 infra postmortem: the nightly pipeline starvation incident</h3>
+      <span data-view-name="saved-item-author">Priya Raghavan</span>
+      <a href="/feed/update/urn:li:ugcPost:7188223344556677889?trkInfo=X&trk=public_post_comment&lipi=urn%3Ali%3Apage%3Ad_flagship3_profile_view_base%3Bxyz">https://www.linkedin.com/feed/update/urn:li:ugcPost:7188223344556677889</a>
+    </div>
+  </div>
+</main>
+</body>
+</html>
