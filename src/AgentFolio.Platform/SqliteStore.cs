@@ -186,22 +186,51 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     }
 
     public async IAsyncEnumerable<StoredEvent> RebuildAsync(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            yield return new StoredEvent(
-                reader.GetInt64(0),
-                reader.GetString(1),
-                reader.GetString(2),
-                DateTimeOffset.Parse(reader.GetString(3)));
+            // Use one transaction for idempotency (running twice yields identical state)
+            var conn = new SqliteConnection(_connectionString);
+            await conn.OpenAsync(ct);
+            using var tx = await conn.BeginTransactionAsync(ct);
+
+            // 1) Truncate projection tables first (idempotent base state)
+            using (var truncate = conn.CreateCommand())
+            {
+                truncate.CommandText = "DELETE FROM saves; DELETE FROM stars;";
+                await truncate.ExecuteNonQueryAsync(ct);
+            }
+
+            // 2) Replay ALL events in id order, re-populating projections via upsert logic
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var type = reader.GetString(1);
+                var payload = reader.GetString(2);
+                if (type == "star_synced")
+                {
+                    var repo = System.Text.Json.JsonSerializer.Deserialize<StarredRepoRecord>(payload);
+                    if (repo != null)
+                    {
+                        await UpsertStarAsync(repo, ct);
+                    }
+                }
+                else if (type == "save_ingested")
+                {
+                    var post = System.Text.Json.JsonSerializer.Deserialize<SavedPostRecord>(payload);
+                    if (post != null)
+                    {
+                        await UpsertSaveAsync(post, ct);
+                    }
+                }
+                yield return new StoredEvent(reader.GetInt64(0), type, payload,
+                    DateTimeOffset.Parse(reader.GetString(3)));
+            }
+
+            // Commit the transaction for idempotency
+            await tx.CommitAsync(ct);
         }
-    }
 
     public async Task UpsertStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
         => await AppendThenProjectAsync(
