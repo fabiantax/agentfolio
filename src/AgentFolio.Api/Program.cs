@@ -1,12 +1,72 @@
+using System.Security.Claims;
+using AgentFolio.Platform.Auth;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "agentfolio_auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.LoginPath = null;
+    });
+builder.Services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 
+// No indexing of any AgentFolio response.
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+    await next(context);
+});
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.UseHttpsRedirection();
+
+app.MapPost("/auth/login", async (HttpContext ctx, LoginRequest? request, ILoginRateLimiter rateLimiter) =>
+{
+    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var now = DateTimeOffset.UtcNow;
+
+    var gate = rateLimiter.CheckAndRecord(ip, now);
+    if (!gate.Allowed)
+    {
+        return Results.Json(new { error = "locked", retryAfterSeconds = gate.RetryAfterSeconds }, statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
+    var encodedHash = Environment.GetEnvironmentVariable(PasswordGate.HashEnvVar);
+    if (request is null || encodedHash is null || !PasswordGate.VerifyPassword(request.Password, encodedHash))
+    {
+        rateLimiter.RecordFailure(ip, now);
+        var state = rateLimiter.CheckAndRecord(ip, now);
+        return Results.Json(new { error = "invalid_password", attemptCount = state.AttemptCount }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    rateLimiter.Reset(ip);
+    await ctx.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "owner")], CookieAuthenticationDefaults.AuthenticationScheme)));
+    return Results.NoContent();
+});
+
+app.MapPost("/auth/logout", async (HttpContext ctx) =>
+{
+    await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.NoContent();
+});
 
 var summaries = new[]
 {
@@ -27,6 +87,12 @@ app.MapGet("/weatherforecast", () =>
 });
 
 app.Run();
+
+public partial class Program
+{
+}
+
+record LoginRequest(string Password);
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {

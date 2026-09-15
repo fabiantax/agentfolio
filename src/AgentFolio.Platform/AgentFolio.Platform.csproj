@@ -15,6 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Isopoh.Cryptography.Argon2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
   </ItemGroup>
 
