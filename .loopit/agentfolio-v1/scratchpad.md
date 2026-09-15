@@ -80,3 +80,21 @@ Final tree: main c09bdbb, 49/49 dotnet tests, chat-core 19/19, arch-gate 4/4, 10
 - Mac nemotron children: 4 dispatched (af-04/05/06 + 1 earlier), all needed parent repair (BOM, ctor shapes); af-06 needed 3 logic-bug fixes (deadlock, lossy events, rebuild-append loop).
 - DFlash2: NOT loadable (oMLX too old); Qwen3.8-27B-4bit: verified working 84 tok/s clean / 17-27 shared.
 - SkillOpt: full dogfood run (env pkg + corpus + oMLX backend), honest no-improvement verdict, corpus/skill mismatch identified.
+
+## PIVOT: v1.1 MULTI-TENANT SAAS (2026-09-16 00:05-01:35)
+User decision: full multi-tenant SaaS (not visitor-uploads-only). Spec 002 written + pushed
+(specs/002-multi-tenant-saas/spec.md); milestone 200 created; issues #27-#31 (S1 tenancy ->
+S2 OAuth || S3 uploads -> S4 sandbox -> S5 share+migration); issue #26 folded into spec 002.
+Kills af-13's GITHUB_TOKEN blocker (per-tenant OAuth instead of admin PAT).
+
+### Incident: fab-swarm swarm.db fleet wedge (fab-swarm#140)
+stig DAG registration impossible: MCP calls 420s/30s timeouts; root = duplicate mcp-proxy spawn
++ WAL-recovery lock storm (ro opens can't recover dirty shm; 8 respawning holders). Workaround:
+Gitea issues = board, delegate_task = dispatcher (proven). NOT fixed live (other sessions' servers).
+Diagnostic lessons: (1) fuser <db> before killing DB holders; (2) ro sqlite mode CANNOT recover WAL —
+wedge diagnosis needs an rw open attempt; (3) kills rejected for nohup wrappers never ran — verify
+PID death, don't trust command exit 0.
+
+### v1.1 wave state
+S1 (deleg_c44b9c0c) dispatched 01:35, glm-5.3-flash, worktree /tmp/s1-tenancy.
+S2/S3 parallel after S1 merges; S4 after S3; S5 last.
