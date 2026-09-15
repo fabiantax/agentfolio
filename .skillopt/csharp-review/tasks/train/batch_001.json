@@ -1,0 +1,98 @@
+[
+  {
+    "id": "csr-001",
+    "task_type": "review",
+    "question": "Review this C# constructor: `public StarsSyncService(HttpClient http, ILogger log, AgentFolioDbContext db) { _http = http; _db = db; }` registered as singleton in DI. Identify the DI-lifetime bug and name the fix pattern.",
+    "context": {"expected_keywords": ["captive", "scoped", "singleton", "dbcontext"], "min_matches": 2, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-002",
+    "task_type": "review",
+    "question": "A handler does `configuration[\"IngestToken\"]` inside business logic to read a secret on every call. What is wrong and what is the idiomatic fix (options pattern)? Name the exact API used to fail fast at startup.",
+    "context": {"expected_keywords": ["ioptions", "validate", "startup", "configuration"], "min_matches": 2, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-003",
+    "task_type": "review",
+    "question": "File Slices/Saves/IngestEndpoint.cs contains `using Slices.Chat;` and calls ChatProjection.Rebuild(). Which architecture rule does this violate and what are the two legal alternatives for cross-slice communication?",
+    "context": {"expected_keywords": ["slice", "contracts", "event", "coupling"], "min_matches": 2, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-004",
+    "task_type": "review",
+    "question": "A pull request adds `public interface IStarSearchService` with exactly one implementation and no test fake. Is the interface justified? Give the rule and the two exceptions where a single-impl interface IS correct.",
+    "context": {"expected_keywords": ["yagni", "port", "boundary", "test"], "min_matches": 2, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-005",
+    "task_type": "perf",
+    "question": "This hot-path code runs per chat message: `var words = text.Split(' '); var set = new HashSet<string>(words); bool hit = set.Overlaps(_stopWords);` with _stopWords a string[]. It allocates an array + HashSet per call. Rewrite using .NET 8+ types that allocate zero, naming the exact types.",
+    "context": {"expected_keywords": ["searchvalues", "span", "frozen", "allocat"], "min_matches": 2, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-006",
+    "task_type": "perf",
+    "question": "A lookup table of 200 skill names -> ids is built with `new Dictionary<string,int>(data)` on every request. What collection type should this be, when should it be constructed, and why (read performance characteristics)?",
+    "context": {"expected_keywords": ["frozendictionary", "static", "readonly", "read"], "min_matches": 2, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-007",
+    "task_type": "perf",
+    "question": "A parser does `string part = text.Substring(0, i); if (part == \"stars\") ...` in a loop over a 50KB payload. Give the allocation-free rewrite and explain why the .NET 10 JIT may stack-allocate such temporaries anyway.",
+    "context": {"expected_keywords": ["span", "readonlyspan", "stack", "escape"], "min_matches": 2, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-008",
+    "task_type": "perf",
+    "question": "You must prove a claimed 30% latency improvement in a C# endpoint before merging. Name the measurement tool for ns-level micro-benchmarks with per-op allocation reporting, and the two profiling tools to find WHERE time goes (one sampling-based for flamegraphs, one for live GC/alloc counters).",
+    "context": {"expected_keywords": ["benchmarkdotnet", "dotnet-trace", "dotnet-counters"], "min_matches": 3, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-009",
+    "task_type": "testing",
+    "question": "A URL canonicalizer strips tracking params. Instead of 3 hand-picked [Theory] cases, write the property-based test approach: name the framework, the two laws worth testing (idempotence + round-trip), and what the shrunk counterexample gives you.",
+    "context": {"expected_keywords": ["fscheck", "idempotent", "round", "shrink"], "min_matches": 3, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-010",
+    "task_type": "testing",
+    "question": "Stakeholder wants: 'Given 12 starred rust repos, when I ask about rust projects, the answer cites at least one source.' Which C# test framework expresses this almost verbatim, what is its file format, and which OSS package replaced SpecFlow?",
+    "context": {"expected_keywords": ["reqnroll", "gherkin", "specflow"], "min_matches": 3, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-011",
+    "task_type": "testing",
+    "question": "A test fakes GitHub star fetching by mocking Octokit's GitHubClient with Moq. Why is mocking-this-you-don't-own wrong, and what is the correct pattern (wrap + port + fake)?",
+    "context": {"expected_keywords": ["own", "port", "wrap", "fake"], "min_matches": 3, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-012",
+    "task_type": "testing",
+    "question": "CI asserts fluent behavior with FluentAssertions latest. What happened to that library's license in v8 and what are the two greenfield-safe alternatives?",
+    "context": {"expected_keywords": ["commercial", "shouldly", "xunit"], "min_matches": 2, "difficulty": "easy"}
+  },
+  {
+    "id": "csr-013",
+    "task_type": "design",
+    "question": "Design the seam for swapping chat models: browser LFM2 vs server NIM, chosen per-request. Which dependency-rule applies (name the principle), where does selection logic live, and what single abstraction do both runtimes implement?",
+    "context": {"expected_keywords": ["dependency", "inversion", "ichatclient", "factory"], "min_matches": 3, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-014",
+    "task_type": "design",
+    "question": "StarsSync writes projection then appends event (opposite order, no transaction). Explain the event-sourcing correctness rule violated, the failure scenario it causes, and the exact fix (ordering + transaction scope).",
+    "context": {"expected_keywords": ["before", "event", "transaction", "rebuild"], "min_matches": 3, "difficulty": "medium"}
+  },
+  {
+    "id": "csr-015",
+    "task_type": "design",
+    "question": "Three slices need 'user display name'. Someone proposes one shared UserService all slices call. Argue for or against using DRY correctly: what should be shared vs duplicated, and when is dedup wrong?",
+    "context": {"expected_keywords": ["knowledge", "third", "coupling", "contracts"], "min_matches": 2, "difficulty": "hard"}
+  },
+  {
+    "id": "csr-016",
+    "task_type": "perf",
+    "question": "An endpoint returns `items.ToList()` at the repository boundary, then the handler does `.Where(...).ToArray()` on it. Two materializations of the same data. State the rule about materializing enumerables and where the single materialization point should be.",
+    "context": {"expected_keywords": ["once", "boundary", "enumerable", "materiali"], "min_matches": 2, "difficulty": "easy"}
+  }
+]
