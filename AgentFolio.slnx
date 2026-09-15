@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AgentFolio.Agents/AgentFolio.Agents.csproj" />
     <Project Path="src/AgentFolio.Api/AgentFolio.Api.csproj" />
+    <Project Path="src/AgentFolio.AppHost/AgentFolio.AppHost.csproj" />
     <Project Path="src/AgentFolio.Contracts/AgentFolio.Contracts.csproj" />
     <Project Path="src/AgentFolio.Platform/AgentFolio.Platform.csproj" />
   </Folder>
