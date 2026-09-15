@@ -1,0 +1,35 @@
+# One-shot demo proof: run a real /extract call against the gliformer
+# service from inside the cluster and print the result. Green job log =
+# the stack works, visible to the client in `kubectl logs`.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gliformer-smoke
+  namespace: agentfolio
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: smoke
+          image: curlimages/curl:8.10.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "== /health =="
+              curl -sf http://gliformer.agentfolio.svc:8080/health; echo
+              echo "== /extract (veld contract: entities + joint relations) =="
+              curl -sf http://gliformer.agentfolio.svc:8080/extract \
+                -H 'content-type: application/json' -d '{
+                  "text": "Alice works at Acme Corp in London. Her manager Bob joined Acme Corp in 2021 after leaving Initech.",
+                  "entities": {"person": "a human", "organization": "a company or body", "location": "a place", "date": "a point in time"},
+                  "relations": {"works_at": "person is employed by organization"},
+                  "entity_threshold": 0.5,
+                  "relation_threshold": 0.5
+                }' | tee /tmp/out.json; echo
+              grep -q "works_at" /tmp/out.json
+              grep -q "Acme Corp" /tmp/out.json
+              echo "SMOKE PASSED"

@@ -1,0 +1,41 @@
+# veld-extractors-gliformer — Knowledgator GLiFormer backend for the veld
+# /ner + /extract wire contract (third backend next to gliner2 + gliner-relex;
+# separate image per veld venv discipline — pins are mutually incompatible).
+#
+# - Model:  knowledgator/gliformer-base-v1 (2026-09-11, Apache-2.0)
+# - CPU-only torch (demo VMs are CPU; saves ~2 GB vs the CUDA wheel)
+# - Model baked in (veld pattern: reproducibility over image size)
+# - Smoke-tested on strix CPU 2026-09-15: NER 94 ms / joint-rel 64 ms
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models/hf-cache \
+    TOKENIZERS_PARALLELISM=false \
+    GLIFORMER_MODEL=knowledgator/gliformer-base-v1 \
+    GLIFORMER_DEVICE=cpu
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+RUN pip install \
+    "fastapi==0.115.0" \
+    "uvicorn[standard]==0.32.0" \
+    "gliformer==0.1.2"
+
+# Bake the checkpoint (offline-capable container).
+RUN HF_HUB_DOWNLOAD_TIMEOUT=120 python -c "from huggingface_hub import snapshot_download; \
+    p = snapshot_download('knowledgator/gliformer-base-v1', max_workers=2); \
+    print('downloaded to', p)"
+
+WORKDIR /app
+COPY gliformer_main.py /app/gliformer_main.py
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s \
+    CMD curl -sf http://127.0.0.1:8080/health || exit 1
+
+CMD ["uvicorn", "gliformer_main:app", "--host", "0.0.0.0", "--port", "8080"]

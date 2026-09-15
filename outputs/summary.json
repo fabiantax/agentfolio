@@ -1,0 +1,101 @@
+{
+  "version": "skillopt-0.1.0",
+  "config": {
+    "model_backend": "qwen_chat",
+    "optimizer_model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ4-mtp",
+    "target_model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ4-mtp",
+    "qwen_chat_base_url": "http://macbook-pro-van-fabian:8123/v1",
+    "qwen_chat_api_key": "qovfyr-quzwif-mysnI1",
+    "qwen_chat_temperature": 0.3,
+    "qwen_chat_timeout_seconds": 180,
+    "qwen_chat_max_tokens": 6144,
+    "num_epochs": 2,
+    "steps_per_epoch": 4,
+    "batch_size": 4,
+    "accumulation": 1,
+    "seed": 42,
+    "minibatch_size": 4,
+    "merge_batch_size": 4,
+    "analyst_workers": 1,
+    "failure_only": false,
+    "max_analyst_rounds": 2,
+    "edit_budget": 4,
+    "min_edit_budget": 2,
+    "lr_scheduler": "constant",
+    "skill_update_mode": "patch",
+    "use_gate": true,
+    "gate_metric": "hard",
+    "sel_env_num": 8,
+    "test_env_num": 8,
+    "eval_test": true,
+    "env": "_csharp_review",
+    "skill_init": ".skillopt/csharp-review/seed-skill.md",
+    "out_root": "/home/fabian/Developer/personal/agentfolio/outputs",
+    "split_dir": ".skillopt/csharp-review/tasks",
+    "workers": 1,
+    "base_url": "http://macbook-pro-van-fabian:8123/v1",
+    "api_key": "qovf...snI1",
+    "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ4-mtp",
+    "timeout_seconds": 180,
+    "max_completion_tokens": 2048,
+    "optimizer_backend": "openai_chat",
+    "target_backend": "openai_chat",
+    "train_size": 16,
+    "batches_per_epoch": 4,
+    "samples_per_epoch": 16,
+    "lr_control_mode": "fixed"
+  },
+  "baseline_selection_hard": null,
+  "best_selection_hard": 0.875,
+  "best_step": 0,
+  "current_origin": "initial_skill",
+  "best_origin": "initial_skill",
+  "total_steps": 8,
+  "total_accepts": 0,
+  "total_rejects": 0,
+  "total_skips": 8,
+  "epoch_stats": [
+    {
+      "epoch": 1,
+      "steps": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "accepts": 0,
+      "rejects": 0,
+      "skips": 4,
+      "best_score_at_epoch_end": 0.875,
+      "current_score_at_epoch_end": 0.875
+    },
+    {
+      "epoch": 2,
+      "steps": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "accepts": 0,
+      "rejects": 0,
+      "skips": 4,
+      "best_score_at_epoch_end": 0.875,
+      "current_score_at_epoch_end": 0.875
+    }
+  ],
+  "baseline_test_hard": 1.0,
+  "baseline_test_soft": 0.875,
+  "test_hard": 1.0,
+  "test_soft": 0.875,
+  "test_delta_hard": 0.0,
+  "total_wall_time_s": 1411.9,
+  "token_summary": {
+    "_total": {
+      "calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  }
+}

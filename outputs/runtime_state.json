@@ -1,0 +1,10 @@
+{
+  "last_completed_step": 8,
+  "current_skill_path": "/home/fabian/Developer/personal/agentfolio/outputs/skills/skill_v0008.md",
+  "current_score": 0.875,
+  "current_origin": "initial_skill",
+  "best_skill_path": "/home/fabian/Developer/personal/agentfolio/outputs/best_skill.md",
+  "best_score": 0.875,
+  "best_step": 0,
+  "best_origin": "initial_skill"
+}

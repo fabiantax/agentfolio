@@ -1,0 +1,54 @@
+# GLiFormer extraction backend — veld /ner + /extract contract on k8s.
+# Runs identically on: local podman (podman play kube) and Hetzner k3s.
+# Host policy: every container memory-capped (requests < limits = throttle
+# before kill, the k8s-native form of the MemoryHigh<MemoryMax rule).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentfolio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gliformer
+  namespace: agentfolio
+  labels: { app: gliformer, backend: knowledgator-gliformer }
+spec:
+  replicas: 1  # CPU inference, demo sizing; scale out only with replicas of stateless svc
+  selector:
+    matchLabels: { app: gliformer }
+  template:
+    metadata:
+      labels: { app: gliformer }
+    spec:
+      containers:
+        - name: gliformer
+          image: 100.112.37.119:3200/fabiantax/gliformer:v0.1.1
+          ports:
+            - containerPort: 8080
+          env:
+            - { name: GLIFORMER_DEVICE, value: cpu }
+          resources:
+            # Measured 2026-09-15 (strix, container): steady RSS 1.62 GiB,
+            # LOAD PEAK > 2 GiB (OOMKilled at a 2Gi limit during model load).
+            requests: { cpu: 250m, memory: 1500Mi }
+            limits:   { cpu: "2",  memory: 3Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 120
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gliformer
+  namespace: agentfolio
+spec:
+  selector: { app: gliformer }
+  ports:
+    - port: 8080
+      targetPort: 8080

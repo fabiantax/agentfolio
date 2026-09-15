@@ -36,22 +36,21 @@ Evolve AgentFolio from a single-owner password-gated portfolio chat into a multi
 - FR7 Skills view: per-tenant derived taxonomy (existing derivation logic, scoped).
 - FR8 Event sourcing: unchanged (events append per tenant shard — see NFR3); rebuild command per tenant.
 - FR9 Admin: usage view (US7), tenant list, slug edit, disable tenant, revoke ingest token. Minimal: admin token + JSON endpoints.
-FR10 Disposal: DELETE /api/tenant (owner-only) = bucket prefix delete + tenant DB drop + session/user rows purge; response includes a receipt (bytes freed, counts); test asserts zero residue (no row in any table referencing the tenant, no prefix in bucket).
-FR11 LFM2 browser tier: unchanged (WebGPU detect → local simple replies, server fallback).
-FR12 NIM server tier: unchanged, now tenant-scoped RAG.
+- FR10 Disposal: DELETE /api/tenant (owner-only) = bucket prefix delete + tenant DB drop + session/user rows purge; response includes a receipt (bytes freed, counts); test asserts zero residue (no row in any table referencing the tenant, no prefix in bucket).
+- FR11 LFM2 browser tier: unchanged (WebGPU detect → local simple replies, server fallback).
+- FR12 NIM server tier: unchanged, now tenant-scoped RAG.
 
 ### Non-Functional
 - NFR1 Isolation: the bucket prefix IS the tenant boundary; per-tenant SQLite files are physically separate files; no query ever joins across tenants. Isolation test: seeded two tenants, attempt cross-tenant read via every public route (chat, retrieval, skills, share URL with wrong slug, upload path traversal) → all denied.
 - NFR2 Disposable data: tenant delete = O(prefix) deletion; session uploads auto-expire 24h; idle tenants auto-expire 30d unless pinned. Lifecycle rules declarative (bucket IaC) + enforcer job fallback.
-- NFR2a Split data domains: operational store (global.db: users, tenants, sessions, shares) vs tenant shards (tenants/{tid}/data.db + index.db) vs bucket (uploads + cold content). PVC for global.db; bucket (MinIO demo / Hetzner Objects prod) for uploads. NEVER the operational SQLite in the bucket (append/log-structured writes are S3-anti-pattern).
+- - NFR2a Split data domains: operational store (global.db: users, tenants, sessions, shares) on PVC; tenant shards (tenants/{tid}/data.db + index.db) and uploads in the bucket. Operational SQLite NEVER goes in the bucket (random-writes vs object storage anti-pattern).
 - NFR2b Upload security: size/MIME gate, content sniffing, filename sanitization, path-traversal proof (server-derived paths), virus-scan hook (no-op default, ClamAV optional), WASM-sandboxed parsing.
-- NB2c Rate limits: per-tenant + per-session rate limits (chat, upload, sync) — token bucket, per identity.
+- NFR2c Rate limits: per-tenant + per-session rate limits (chat, upload, sync) — token bucket, per identity.
 - NFR3 Concurrency: shards are independent → per-tenant single-writer constraint only; global.db holds only hot identity/session state. Future: shard-level WAL + busy timeout... (target: no cross-tenant lock contention).
 - NFR4 Cost ceiling: one k3s node demo (MinIO single-node single-rep... replication 1, acceptable for demo; prod = Hetzner Objects.
 - NFR5 Browser model unchanged (LFM2-350M q4 WebGPU, CDN-loaded, no build-time download).
-- NF2 Privacy: recruiters' uploads auto-expire; question logs per-tenant; GDPR delete = FR10.
+- NFR6 Privacy: recruiters' uploads auto-expire; question logs per-tenant; GDPR delete = FR10.
 - NFR7 Performance: chat p95 < 10s with retrieval (spec-001 goal holds); index open < 50ms p95 (tenant LRU).
--open  
 ### Migration
 - MIG1 Existing single-owner data (stars/saves/events/skills on main PVC SQLite) becomes tenant "showcase" — one-off migration script, verified by tests + parity run.
 - MIG2 Existing password gate retires: the shared password feature stays ONLY as per-share optional gate (FR4).

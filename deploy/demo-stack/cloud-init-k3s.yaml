@@ -1,0 +1,44 @@
+#cloud-config
+# k3s demo base VM — AgentFolio + GLiFormer extraction stack.
+# Rendered per-launch: sed the TS_AUTHKEY_PLACEHOLDER before create
+# (runbook §C). The authkey NEVER gets committed.
+hostname: k3s-demo
+users:
+  - name: fabian
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBzQ14rnqN/LeYyMn9anThnZ2C6nPjf7mDuO5kGZ0w4K fabian@strix
+  - name: root
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBzQ14rnqN/LeYyMn9anThnZ2C6nPjf7mDuO5kGZ0w4K fabian@strix
+
+package_update: true
+packages: [curl, ca-certificates, htop, jq]
+
+write_files:
+  # containerd registry mirror for the self-hosted Gitea registry.
+  # Plain HTTP over the tailnet (strix = 100.112.37.119:3200) — must exist
+  # BEFORE k3s starts so the daemon picks it up on first boot.
+  - path: /etc/rancher/k3s/registries.yaml
+    content: |
+      mirrors:
+        "100.112.37.119:3200":
+          endpoint:
+            - "http://100.112.37.119:3200"
+  # Leak protection inherited from the wp-burst base (tmps older than 3d).
+  - path: /etc/tmpfiles.d/clean-tmps.conf
+    content: |
+      d /tmp 1777 root root 3d
+      d /var/tmp 1777 root root 3d
+
+runcmd:
+  # 2G swap — CX23/CX33 comfort under the 2Gi gliformer limit.
+  - [ sh, -c, "fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && grep -q swapfile /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab" ]
+  # Tailscale FIRST (registry + ops reachability), authkey rendered at create.
+  - [ sh, -c, "curl -fsSL https://tailscale.com/install.sh | sh" ]
+  - [ sh, -c, "tailscale up --authkey TS_AUTHKEY_PLACEHOLDER --hostname k3s-demo --accept-dns=false" ]
+  # k3s = CNCF-conformant Kubernetes: same API/kubectl/helm as any cluster.
+  - [ sh, -c, "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='server --write-kubeconfig-mode 644' sh -" ]
+  - [ sh, -c, "until kubectl get node k3s-demo 2>/dev/null | grep -q Ready; do sleep 5; done; kubectl get nodes -o wide" ]
