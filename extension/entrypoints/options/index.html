@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentFolio Harvester — Settings</title>
+  </head>
+  <body>
+    <h1>AgentFolio Harvester</h1>
+    <form id="config-form">
+      <label>
+        Server URL
+        <input type="url" id="serverUrl" placeholder="http://127.0.0.1:8080" required />
+      </label>
+      <label>
+        Ingest token
+        <input type="password" id="ingestToken" placeholder="Bearer token" />
+      </label>
+      <button type="submit">Save</button>
+      <span id="status" role="status"></span>
+    </form>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
