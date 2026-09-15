@@ -57,3 +57,26 @@ Build AgentFolio per specs/001-portfolio-assistant: password-gated C#/.NET 10 po
 - Parent gates: build 0 warn, 8/8 tests, arch-gate 4/4. PR #1 open (55 files +3287/-341).
 - Mac lane: oMLX revived (down since 09-11), nemotron-3.5-lightning verified 6.6s cold, provider omlx-nemotron registered. Wave-2 easy tasks -> Mac lane via hermes chat -q subprocess pattern.
 - stig: af-01, af-09, af-14 claim+completed by hermes-main.
+
+## BUILD PHASE CONVERGED (2026-09-15 19:35)
+13 of 14 stig tasks DONE (af-01..05, 06..12, 14-gate; af-10 last via PR #25).
+Remaining: af-03 (CI verify — runner-label infra), af-13 (demo acceptance — USER SECRETS).
+Final tree: main c09bdbb, 49/49 dotnet tests, chat-core 19/19, arch-gate 4/4, 10 PRs merged (#1,17-25).
+
+### Succession
+- OPEN CANDIDATE: demo-deploy loop (af-13 + k3s apply + extension live-test) — BLOCKED on GITHUB_TOKEN, NIM_API_KEY, AGENTFOLIO_PASSWORD_HASH (user env, never chat). DECLINED to open until secrets exist.
+- FILED: issue #16 hardening backlog (atlas P0x2, fab-swarm P0-P3) — cross-repo follow-up.
+- FILED: oMLX DFlash2 upgrade fact #304; pkill/pgrep self-match anti-pattern → loopit skill (measured 2x).
+
+### Improvement cycle artifacts landed this loop
+1. ms-agent-framework-dotnet skill: 3 execution-verified MAF 1.21 corrections (AsAIAgent, M.E.AI>=10.10.0, session-required streaming).
+2. loopit skill: pgrep/pkill -f self-match anti-pattern.
+3. atlas-clean-arch-gate skill + live 4-rule gate in repo (caught 2 real violations).
+4. Hardening backlog issue #16 (8 evidence items).
+5. Nemotron-lane defect pattern: BOM'd csproj + object-initializer-on-positional-records (caught af-04+af-05) — future nemotron prompts get a pre-flight instruction.
+
+### Lane ledger (measured today)
+- z.ai glm-5.3-flash children: 8 dispatched, 8 completed, 0 hit max_iterations-uncommitted after worktree isolation adopted mid-session (3 before).
+- Mac nemotron children: 4 dispatched (af-04/05/06 + 1 earlier), all needed parent repair (BOM, ctor shapes); af-06 needed 3 logic-bug fixes (deadlock, lossy events, rebuild-append loop).
+- DFlash2: NOT loadable (oMLX too old); Qwen3.8-27B-4bit: verified working 84 tok/s clean / 17-27 shared.
+- SkillOpt: full dogfood run (env pkg + corpus + oMLX backend), honest no-improvement verdict, corpus/skill mismatch identified.
