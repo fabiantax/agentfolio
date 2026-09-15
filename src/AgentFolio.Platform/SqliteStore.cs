@@ -145,6 +145,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_saves_CanonicalUrl ON saves(CanonicalUrl);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ConversationId TEXT NOT NULL DEFAULT '',
     Role TEXT NOT NULL DEFAULT 'user',
     Content TEXT NOT NULL,
     OccurredAt TEXT NOT NULL

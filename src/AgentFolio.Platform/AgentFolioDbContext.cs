@@ -56,6 +56,7 @@ public sealed class AgentFolioDbContext : DbContext
             e.ToTable("chat_messages");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.Property(x => x.ConversationId);
         });
     }
 }
@@ -89,6 +90,7 @@ public sealed class SavedPost
 public sealed class ChatMessage
 {
     public long Id { get; set; }
+    public string ConversationId { get; set; } = string.Empty;
     public string Role { get; set; } = "user";
     public string Content { get; set; } = string.Empty;
     public DateTimeOffset OccurredAt { get; set; }

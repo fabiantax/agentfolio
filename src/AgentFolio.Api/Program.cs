@@ -1,9 +1,17 @@
 using System.Security.Claims;
+using AgentFolio.Agents;
 using AgentFolio.Platform.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Slices.Chat;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Chat: keyed 'nim' IChatClient (falls back inline when NIM env unset) + conversation store.
+builder.Services.AddNimChatClient();
+builder.Services.AddSingleton<IConversationStore>(_ =>
+    new SqliteConversationStore(
+        Environment.GetEnvironmentVariable("AGENTFOLIO_DB_PATH") ?? "agentfolio.db"));
 
 // Add services to the container.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -85,6 +93,8 @@ app.MapGet("/weatherforecast", () =>
         .ToArray();
     return forecast;
 });
+
+app.MapChatApi();
 
 app.Run();
 

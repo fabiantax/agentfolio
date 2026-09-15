@@ -6,4 +6,19 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\AgentFolio.Agents\AgentFolio.Agents.csproj" />
+    <ProjectReference Include="..\..\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
+    <ProjectReference Include="..\..\AgentFolio.Platform\AgentFolio.Platform.csproj" />
+  </ItemGroup>
+
 </Project>
