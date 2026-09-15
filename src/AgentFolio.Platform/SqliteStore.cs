@@ -244,7 +244,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     public async Task UpsertStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
         => await AppendThenProjectAsync(
             "star_synced",
-            System.Text.Json.JsonSerializer.Serialize(new { repo.RepoId, repo.FullName }),
+            System.Text.Json.JsonSerializer.Serialize(repo),
             (db) =>
             {
                 db.Database.ExecuteSqlRaw(
@@ -257,7 +257,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     public async Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default)
         => await AppendThenProjectAsync(
             "save_ingested",
-            System.Text.Json.JsonSerializer.Serialize(new { post.CanonicalUrl, post.Title }),
+            System.Text.Json.JsonSerializer.Serialize(post),
             (db) =>
             {
                 db.Database.ExecuteSqlRaw(

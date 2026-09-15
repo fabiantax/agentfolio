@@ -62,8 +62,8 @@ public sealed class EventsRebuildTests : IDisposable
         // After rebuild: saves should have 2 rows
         Assert.Equal(2, savesAfter.Count);
 
-        // Events streamed should be exactly 10 (5 stars + 2 saves + 3 additional handled)
-        Assert.Equal(10, events1.Count);
+        // Events streamed should be exactly 9 (5 stars + 1 save + 1 save + 1 dup-star + 1 drift-upsert)
+        Assert.Equal(9, events1.Count);
 
         // Run RebuildAsync second time - must yield identical state
         var events2 = new List<StoredEvent>();
