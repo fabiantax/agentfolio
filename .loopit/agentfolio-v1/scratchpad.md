@@ -38,3 +38,13 @@ Build AgentFolio per specs/001-portfolio-assistant: password-gated C#/.NET 10 po
 
 ## Recent runs
 - 2026-09-15 iter 1: bootstrap (this)
+
+## Iteration 1 dispatch log (2026-09-15 ~16:45)
+- Wave 1 children DISPATCHED (3 parallel, deleg_4fb37e33):
+  - sa-0: af-01-sqlite-store (branch feat/af-01-sqlite-store) — Directory.Packages.props + Contracts ports + Platform SqliteStoreBootstrap + tests
+  - sa-1: af-09-extension (branch feat/af-09-extension) — WXT TS extension, saves harvester, vitest fixtures
+  - sa-2: af-14-atlas-gate (branch feat/af-14-atlas-gate) — generalize slice rules, R4 EF-encapsulation, CI wiring, planted-violation proof
+- Skills created: ms-agent-framework-dotnet (grounded v1.21.0), atlas-clean-arch-gate (measured: scan 12s/406 nodes, store at ~/.atlas/graphfusion/<repo>)
+- atlas dogfood VERIFIED: scan→graphfusion-query→3-rule gate green on scaffold (scripts/arch-gate.sh, exit 0)
+- Repo live: http://localhost:3200/fabiantax/agentfolio (main b9677da), CI workflow pushed
+- Remaining queue: af-02 auth, af-03 CI verify, af-04 stars sync, af-05 saves ingest, af-06 events rebuild, af-07 agents skeleton, af-08 chat SSE, af-10 web component, af-11 aspire k8s, af-12 skills slice, af-13 demo acceptance
