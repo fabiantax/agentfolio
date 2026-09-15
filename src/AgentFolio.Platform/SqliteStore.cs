@@ -188,48 +188,57 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
     public async IAsyncEnumerable<StoredEvent> RebuildAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
-            // Use one transaction for idempotency (running twice yields identical state)
-            var conn = new SqliteConnection(_connectionString);
-            await conn.OpenAsync(ct);
-            using var tx = await conn.BeginTransactionAsync(ct);
-
-            // 1) Truncate projection tables first (idempotent base state)
-            using (var truncate = conn.CreateCommand())
+            // Phase 1: materialize the full event log with a short-lived read
+            // (never hold the reader open across writes — SQLite single-writer).
+            List<StoredEvent> events;
+            using (var readConn = new SqliteConnection(_connectionString))
             {
-                truncate.CommandText = "DELETE FROM saves; DELETE FROM stars;";
-                await truncate.ExecuteNonQueryAsync(ct);
+                await readConn.OpenAsync(ct);
+                await using var cmd = readConn.CreateCommand();
+                cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                var list = new List<StoredEvent>();
+                while (await reader.ReadAsync(ct))
+                {
+                    list.Add(new StoredEvent(reader.GetInt64(0), reader.GetString(1),
+                        reader.GetString(2), DateTimeOffset.Parse(reader.GetString(3))));
+                }
+                events = list;
             }
 
-            // 2) Replay ALL events in id order, re-populating projections via upsert logic
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT id, type, payload, occurred_at FROM events ORDER BY id ASC;";
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
+            // Phase 2: truncate + replay in per-event transactions (same write path
+            // as ingest — AppendThenProjectAsync owns its own connection/tx),
+            // idempotent by construction: full truncate then deterministic replay.
+            using (var conn = new SqliteConnection(_connectionString))
             {
-                var type = reader.GetString(1);
-                var payload = reader.GetString(2);
-                if (type == "star_synced")
+                await conn.OpenAsync(ct);
+                using (var truncate = conn.CreateCommand())
                 {
-                    var repo = System.Text.Json.JsonSerializer.Deserialize<StarredRepoRecord>(payload);
+                    truncate.CommandText = "DELETE FROM saves; DELETE FROM stars;";
+                    await truncate.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            foreach (var e in events)
+            {
+                if (e.Type == "star_synced")
+                {
+                    var repo = System.Text.Json.JsonSerializer.Deserialize<StarredRepoRecord>(e.PayloadJson);
                     if (repo != null)
                     {
                         await UpsertStarAsync(repo, ct);
                     }
                 }
-                else if (type == "save_ingested")
+                else if (e.Type == "save_ingested")
                 {
-                    var post = System.Text.Json.JsonSerializer.Deserialize<SavedPostRecord>(payload);
+                    var post = System.Text.Json.JsonSerializer.Deserialize<SavedPostRecord>(e.PayloadJson);
                     if (post != null)
                     {
                         await UpsertSaveAsync(post, ct);
                     }
                 }
-                yield return new StoredEvent(reader.GetInt64(0), type, payload,
-                    DateTimeOffset.Parse(reader.GetString(3)));
+                yield return e;
             }
-
-            // Commit the transaction for idempotency
-            await tx.CommitAsync(ct);
         }
 
     public async Task UpsertStarAsync(StarredRepoRecord repo, CancellationToken ct = default)
