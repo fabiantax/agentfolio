@@ -1,0 +1,8 @@
+{
+  "name": "agentfolio-web",
+  "private": true,
+  "scripts": {
+    "build": "cd chat-core && bun run build && cd ../hosts/vue && bun run build && cd ../react && bun run build && cd ../angular && bun run build",
+    "test": "cd chat-core && bun run test"
+  }
+}
