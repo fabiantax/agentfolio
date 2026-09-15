@@ -15,18 +15,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Agents\AgentFolio.Agents.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Api\AgentFolio.Api.csproj" />
+    <ProjectReference Include="..\..\src\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Saves\Slices.Saves.csproj" />
     <ProjectReference Include="..\..\src\Slices\Stars\Slices.Stars.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <PackageReference Include="OpenAI" />
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 </Project>
