@@ -1,0 +1,24 @@
+{
+  "name": "@agentfolio/host-angular",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build"
+  },
+  "dependencies": {
+    "@agentfolio/chat-core": "file:../../chat-core",
+    "@angular/common": "^20.0.0",
+    "@angular/compiler": "^20.0.0",
+    "@angular/core": "^20.0.0",
+    "@angular/platform-browser": "^20.0.0",
+    "rxjs": "^7.8.0",
+    "tslib": "^2.6.0",
+    "zone.js": "^0.15.0"
+  },
+  "devDependencies": {
+    "@angular/compiler-cli": "^20.0.0",
+    "typescript": "~5.8.0",
+    "vite": "^6.0.0"
+  }
+}
