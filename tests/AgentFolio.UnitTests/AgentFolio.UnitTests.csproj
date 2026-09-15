@@ -8,15 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="OpenAI" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,11 +21,14 @@
     <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Agents\AgentFolio.Agents.csproj" />
     <ProjectReference Include="..\..\src\AgentFolio.Api\AgentFolio.Api.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Stars\Slices.Stars.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Saves\Slices.Saves.csproj" />
     <ProjectReference Include="..\..\src\Slices\Skills\Slices.Skills.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <Using Include="Xunit" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>
