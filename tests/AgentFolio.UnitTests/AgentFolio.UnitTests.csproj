@@ -14,6 +14,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="OpenAI" />
+      <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,7 +27,7 @@
     <ProjectReference Include="..\..\src\Slices\Skills\Slices.Skills.csproj" />
     <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
     <ProjectReference Include="..\..\src\Slices\Tenancy\Slices.Tenancy.csproj" />
-    <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Auth2\Slices.Auth2.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,10 +4,11 @@ using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Slices.Auth2;
 using Slices.Chat;
-using Slices.Tenancy;
 using Slices.Uploads;
 using AgentFolio.Platform.Storage;
+using Slices.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
 builder.Services.AddAuthorization();
+builder.Services.AddHttpClient();
 
 // Tenancy (spec 002 s1-01): global registry + per-tenant shard LRU.
 builder.Services.AddSingleton(_ =>
@@ -41,8 +43,7 @@ builder.Services.AddSingleton(_ =>
 builder.Services.AddSingleton(sp => new TenantShardRegistry(
     sp.GetRequiredService<TenantRegistry>().GlobalDbPath));
 
-// Uploads (spec 002 s3-03): bucket store (S3 when configured — constructor throws
-// without AGENTFOLIO_S3_ENDPOINT; InMemoryObjectStore for local dev) + gated pipeline.
+// Uploads (spec 002 s3-03): bucket store (S3 when configured; InMemory for local dev).
 if (Environment.GetEnvironmentVariable(S3ObjectStore.EndpointEnvVar) is string)
 {
     builder.Services.AddSingleton<IObjectStore, S3ObjectStore>();
@@ -121,8 +122,9 @@ app.MapGet("/weatherforecast", () =>
 });
 
 app.MapChatApi();
-app.MapTenancyApi();
 app.MapUploadsApi();
+app.MapTenancyApi();
+app.MapAuth2Api();
 
 app.Run();
 
