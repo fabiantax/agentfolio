@@ -108,3 +108,12 @@ S4 sandbox: dispatched (deleg_5b94afd1) — DESIGN PIVOT: process-isolated extra
 S5 share+migration: last, after S4.
 Load discipline: kani-narrow runner (ctam_proto lane) re-fired after first kill — always kill the
 bash LOOP pid, not just the cbmc child.
+
+## v1.1 CODE-COMPLETE (2026-09-16 08:15)
+All 5 waves merged: S1 #32 (tenancy), S2 #33 (OAuth), S3 #34 (uploads/bucket), S4 #35 (sandbox),
+S5 #36 (share+migration+isolation). main @ post-#36, 94/94 tests, arch-gate 4/4.
+Child salvage stats tonight: 5/5 waves needed parent fixes; 2 real logic bugs caught
+(migration idempotency, S1 ULID OOB). Kani/cbmc storm interfered 3x — coordination note left in
+ctam-proto astra/kani-len2-rerun.log.
+Remaining (deploy-gated, not code): GitHub OAuth app registration, MinIO on k3s, NIM key,
+--migrate-single-to-tenant run against real data, chat-core script serving path.
