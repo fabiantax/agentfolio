@@ -149,7 +149,13 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 });
 
+// Landing: the app IS the showcase portfolio chat.
+app.MapGet("/", () => Results.Redirect("/share/showcase", permanent: false));
+
 app.MapChatApi();
+
+// Static UI: /web/* serves the built chat component + host demos (same origin as API).
+app.MapStaticAssets();
 app.MapUploadsApi();
 app.MapTenancyApi();
 app.MapAuth2Api();

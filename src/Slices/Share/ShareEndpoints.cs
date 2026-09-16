@@ -18,7 +18,7 @@ namespace Slices.Share;
 /// </summary>
 public static class ShareEndpoints
 {
-    public const string ChatScriptPlaceholderSrc = "/web/chat-core/dist/index.js"; // placeholder until chat-core bundle is served
+    public const string ChatScriptPlaceholderSrc = "/web/chat-core/index.js"; // served from wwwroot via MapStaticAssets
 
     public static IEndpointRouteBuilder MapShareApi(this IEndpointRouteBuilder app)
     {
@@ -110,7 +110,6 @@ public static class ShareEndpoints
 <head><meta charset="utf-8"><meta name="robots" content="noindex"><title>{enc} - AgentFolio</title></head>
 <body>
   <h1>{enc}</h1>
-  <!-- NOTE: script src is a placeholder; /web/chat-core/dist/index.js is not served yet. -->
   <agentfolio-chat data-api-base="/api" data-tenant-id="{tid}"></agentfolio-chat>
   <script src="{ChatScriptPlaceholderSrc}"></script>
 </body>
