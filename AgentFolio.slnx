@@ -22,6 +22,9 @@
   <Folder Name="/src/Slices/Tenancy/">
     <Project Path="src/Slices/Tenancy/Slices.Tenancy.csproj" />
   </Folder>
+  <Folder Name="/src/AgentFolio.Sandbox/">
+    <Project Path="src/AgentFolio.Sandbox/AgentFolio.Sandbox.Extractor/AgentFolio.Sandbox.Extractor.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AgentFolio.UnitTests/AgentFolio.UnitTests.csproj" />
   </Folder>

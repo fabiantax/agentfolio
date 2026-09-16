@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Slices.Uploads;
 
@@ -35,6 +37,24 @@ public static class UploadEndpoints
             try
             {
                 var receipt = await uploads.StoreAsync(tid, sid, ms.ToArray(), DateTimeOffset.UtcNow, ct);
+
+                // s4-04: fire-and-forget extraction in the process sandbox.
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var extraction = http.RequestServices.GetRequiredService<ExtractionService>();
+                        await extraction.ExtractAsync(tid, sid, receipt.Key,
+                            onError: reason => http.RequestServices.GetRequiredService<ILogger<ExtractionService>>()
+                                .LogWarning("upload extraction failed for {Key}: {Reason}", receipt.Key, reason));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never let background extraction take the request down.
+                        Console.Error.WriteLine($"extraction_dispatch_error: {ex.Message}");
+                    }
+                }, CancellationToken.None);
+
                 return Results.Ok(receipt);
             }
             catch (InvalidOperationException ex)

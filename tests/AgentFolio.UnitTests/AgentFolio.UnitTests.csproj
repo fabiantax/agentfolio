@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
     <ProjectReference Include="..\..\src\Slices\Tenancy\Slices.Tenancy.csproj" />
     <ProjectReference Include="..\..\src\Slices\Auth2\Slices.Auth2.csproj" />
+      <ProjectReference Include="..\..\src\AgentFolio.Sandbox\AgentFolio.Sandbox.Extractor\AgentFolio.Sandbox.Extractor.csproj" />
   </ItemGroup>
 
   <ItemGroup>
