@@ -4,6 +4,7 @@ using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Slices.Auth2;
 using Slices.Chat;
 using Slices.Tenancy;
 
@@ -29,6 +30,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
 builder.Services.AddAuthorization();
+builder.Services.AddHttpClient();
 
 // Tenancy (spec 002 s1-01): global registry + per-tenant shard LRU.
 builder.Services.AddSingleton(_ =>
@@ -107,6 +109,7 @@ app.MapGet("/weatherforecast", () =>
 
 app.MapChatApi();
 app.MapTenancyApi();
+app.MapAuth2Api();
 
 app.Run();
 
