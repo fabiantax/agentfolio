@@ -6,9 +6,10 @@ on:
 
 jobs:
   build-test:
-    # Host lane (label-wedge fix): strix-main is a HOST runner (no docker socket) —
-    # container: jobs wedge forever on it. Run with the host's dotnet SDK instead.
-    runs-on: strix-main
+    # Host lane: the live strix-runner serves labels ubuntu-latest/strix-host/self-hosted
+    # as HOST jobs (no docker). Never use container: here — that wedges on the docker socket.
+    # strix-main has NO live daemon (config exists, daemon doesn't) — runs queue forever.
+    runs-on: strix-host
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,11 +30,35 @@ jobs:
           dotnet build -warnaserror --no-restore
           echo "BUILD_RC=$?"
 
-      - name: Test
+      - name: Test (with coverage)
         run: |
           export PATH="$HOME/.dotnet:$PATH"
-          dotnet test --no-build --verbosity minimal
+          dotnet test --no-build --verbosity minimal \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults
           echo "TEST_RC=$?"
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.4 || true
+          REPORTGEN="$HOME/.dotnet/tools/reportgenerator"
+          if [ -x "$REPORTGEN" ]; then
+            "$REPORTGEN" -reports:"TestResults/**/coverage.cobertura.xml" \
+              -targetdir:cover-report -reporttypes:TextSummary
+            echo "=== LINE/BRANCH COVERAGE ==="
+            grep -E "Line coverage|Branch coverage|Method coverage" cover-report/Summary.txt || true
+          else
+            # fallback: raw cobertura line-rate parse
+            python3 - <<'EOF'
+            import glob, xml.etree.ElementTree as ET
+            for f in glob.glob("TestResults/**/coverage.cobertura.xml", recursive=True):
+                r = ET.parse(f).getroot()
+                lr, br = r.get("line-rate"), r.get("branch-rate")
+                print(f"coverage: line {float(lr)*100:.1f}% branch {float(br)*100:.1f}% ({f})")
+            EOF
+          fi
 
       - name: Clean-architecture gate (Atlas, host binary)
         run: |
