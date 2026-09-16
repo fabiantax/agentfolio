@@ -110,8 +110,8 @@ public static class ShareEndpoints
 <head><meta charset="utf-8"><meta name="robots" content="noindex"><title>{enc} - AgentFolio</title></head>
 <body>
   <h1>{enc}</h1>
-  <agentfolio-chat data-api-base="/api" data-tenant-id="{tid}"></agentfolio-chat>
-  <script src="{ChatScriptPlaceholderSrc}"></script>
+  <agentfolio-chat server-url=""></agentfolio-chat>
+  <script type="module" src="{ChatScriptPlaceholderSrc}"></script>
 </body>
 </html>
 """;

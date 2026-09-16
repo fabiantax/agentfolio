@@ -82,7 +82,8 @@ public class FullJourneyTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, share.StatusCode);
         var html = await share.Content.ReadAsStringAsync();
         Assert.Contains("agentfolio-chat", html);
-        Assert.Contains(_showcaseTenantId, html);
+        Assert.Contains("type=\"module\"", html); // module bundle (plain script = SyntaxError, silent dead UI)
+        Assert.DoesNotContain(_showcaseTenantId, html); // tenant id never leaks to anonymous share visitors
         Assert.StartsWith("noindex", share.Headers.GetValues("X-Robots-Tag").First());
 
         // ---- 6. Upload contract: cookie-auth'd but WITHOUT an OAuth tid claim -> 403
