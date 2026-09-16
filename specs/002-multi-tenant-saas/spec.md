@@ -43,11 +43,11 @@ Evolve AgentFolio from a single-owner password-gated portfolio chat into a multi
 ### Non-Functional
 - NFR1 Isolation: the bucket prefix IS the tenant boundary; per-tenant SQLite files are physically separate files; no query ever joins across tenants. Isolation test: seeded two tenants, attempt cross-tenant read via every public route (chat, retrieval, skills, share URL with wrong slug, upload path traversal) → all denied.
 - NFR2 Disposable data: tenant delete = O(prefix) deletion; session uploads auto-expire 24h; idle tenants auto-expire 30d unless pinned. Lifecycle rules declarative (bucket IaC) + enforcer job fallback.
-- - NFR2a Split data domains: operational store (global.db: users, tenants, sessions, shares) on PVC; tenant shards (tenants/{tid}/data.db + index.db) and uploads in the bucket. Operational SQLite NEVER goes in the bucket (random-writes vs object storage anti-pattern).
+- NFR2a Split data domains: operational store (global.db: users, tenants, sessions, shares) on PVC; tenant shards (tenants/{tid}/data.db + index.db) and uploads in the bucket. Operational SQLite NEVER goes in the bucket (random-writes vs object storage anti-pattern).
 - NFR2b Upload security: size/MIME gate, content sniffing, filename sanitization, path-traversal proof (server-derived paths), virus-scan hook (no-op default, ClamAV optional), WASM-sandboxed parsing.
 - NFR2c Rate limits: per-tenant + per-session rate limits (chat, upload, sync) — token bucket, per identity.
 - NFR3 Concurrency: shards are independent → per-tenant single-writer constraint only; global.db holds only hot identity/session state. Future: shard-level WAL + busy timeout... (target: no cross-tenant lock contention).
-- NFR4 Cost ceiling: one k3s node demo (MinIO single-node single-rep... replication 1, acceptable for demo; prod = Hetzner Objects.
+- NFR4 Cost ceiling: one k3s node demo (Garage single-node, replication 1, acceptable for demo; prod = Hetzner Objects. MinIO RETIRED: upstream archived Feb 2026 — replaced by Garage (Rust, Deuxfleurs); Silo (pgsty MinIO fork) is the parity fallback if S3 Object Lock/lifecycle-server-side is ever needed. Garage lacks server-side lifecycle rules — the UploadExpiryEnforcer BackgroundService is the expiry mechanism of record (not a fallback).
 - NFR5 Browser model unchanged (LFM2-350M q4 WebGPU, CDN-loaded, no build-time download).
 - NFR6 Privacy: recruiters' uploads auto-expire; question logs per-tenant; GDPR delete = FR10.
 - NFR7 Performance: chat p95 < 10s with retrieval (spec-001 goal holds); index open < 50ms p95 (tenant LRU).
@@ -63,7 +63,7 @@ Evolve AgentFolio from a single-owner password-gated portfolio chat into a multi
 - OQ4 Do recruiter uploads feed the tenant's index? (lean: session-scoped only, 24h, never persisted into tenant index — upload answers cite the upload only)
 - OQ4a Does the candidate's pinned CV enter the index? (lean: yes, that's the point of pinning)
 - OQ5 Brotli/compression of index shards? (lean: no, over-engineering for v1.1)
-- OQ6 MinIO: single-node replication-1 OK for demo, or require replication? (lean: replication-1, documented risk)
+- OQ6 RESOLVED: Garage single-node replication-1 for demo (documented risk); server-side lifecycle not available — enforcer owns expiry
 - OH7 What happens to the WASM sandbox (issue #26) scope now? (lean: unchanged, it parses uploads — folds INTO this spec as FR4a's implementation detail)
 - OQ8 If GitHub OAuth token expires and user doesn't return, does idle-expiry delete their stars? (lean: yes — that's the disposable default; pin to preserve)
 

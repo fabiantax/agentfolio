@@ -93,3 +93,22 @@ kubectl -n agentfolio create secret generic agentfolio-secrets \
 ```
 
 Reference with `secretKeyRef` in the api deployment template; never commit values.
+
+
+## Object storage (s3-03): Garage replaces MinIO (2026-09-16)
+MinIO community edition is dead (console stripped 2025-05, images stopped 2025-10, repo
+archived 2026-02). Demo backend = Garage v2.3 (Rust, Deuxfleurs, AGPL — separate process,
+no linking): single ~19MB static binary, `garage server --single-node`, S3 API :3900,
+path-style (our AWSSDK.S3 ForcePathStyle=true already matches), admin :3903.
+
+k3s deploy sketch:
+  - StatefulSet: garagehq.deuxfleurs.fr/garage:v2.3.0 image, /var/lib/garage PVC
+  - Env: GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN (Secret)
+  - Init (one-off job): garage layout assign <id> -c <cap>; garage bucket create agentfolio;
+    garage key create agentfolio-api -> AGENTFOLIO_S3_ACCESS_KEY/SECRET_KEY
+  - AGENTFOLIO_S3_ENDPOINT=http://garage:3900, AGENTFOLIO_S3_BUCKET=agentfolio
+Expiry: Garage has NO server-side lifecycle rules — UploadExpiryEnforcer (15-min scan,
+24h TTL) is the mechanism of record; the in-memory tracking table becomes a durability
+gap on restart (known v1.1 limitation, hardening backlog).
+Fallback if MinIO parity needed: Silo (pgsty/silo fork, console restored, CVE-2025-62506
+patched) — drop-in image swap docker.io/pgsty/minio.
