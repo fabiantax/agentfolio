@@ -30,10 +30,10 @@ k3s gets a containerd mirror via `registries.yaml` in cloud-init).
 cd ~/Developer/personal/agentfolio/deploy/demo-stack
 
 podman build -f Containerfile.gliformer \
-  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.7 .
+  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.8 .
 
 podman run -d --name gliformer-demo -p 18080:8080 --memory 3g \
-  100.112.37.119:3200/fabiantax/gliformer:v0.1.7
+  100.112.37.119:3200/fabiantax/gliformer:v0.1.8
 # NOTE --memory 3g: fp32 model load PEAKS >2 GiB (OOMKilled at 2g, measured
 # 2026-09-15); steady-state RSS is ~1.7 GiB. Same numbers are in k8s limits.
 
@@ -55,7 +55,7 @@ at this service — same wire contract as the gliner2 bundle.
 ```bash
 podman login 100.112.37.119:3200 -u fabiantax \
   -p "$(token from ~/.config/gitea)"
-podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.7
+podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.8
 ```
 
 ## C. One-time — bake the k3s base snapshot (~10 min, then €0 idle)

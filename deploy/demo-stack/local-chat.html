@@ -109,7 +109,7 @@ async function load() {
   $("loadstats").innerHTML = "downloading model + tokenizer…";
   const t0 = performance.now();
   try {
-    _mod = await import("/assets/transformers.min.mjs");  // SAME-ORIGIN — no CDN (iOS content blockers killed the jsdelivr import)
+    _mod = await import("/assets/transformers.bundle.mjs");  // SAME-ORIGIN bun bundle — no CDN (iOS content blockers killed the jsdelivr import)
     const { pipeline, env } = _mod;
     env.allowLocalModels = false;
     env.backends.onnx.wasm.wasmPaths = "/assets/ort/";    // self-hosted ort wasm

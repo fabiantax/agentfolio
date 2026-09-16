@@ -619,7 +619,7 @@ def _serve_static(base_env: str, rest: str) -> FileResponse:
 
 @app.api_route("/models/{rest:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def model_file(rest: str) -> FileResponse:
-    span = otel_setup.tracer().start_as_current_span("gliformer.model_file")
+    span = otel_setup.tracer().start_span("gliformer.model_file")
     try:
         path = os.path.realpath(os.path.join(_MODELS_DIR, rest))
         if os.path.isfile(path):
@@ -789,7 +789,7 @@ def extract(req: ExtractRequest) -> ExtractResponse:
         rels_out.setdefault(r["relation"], []).append(r)
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
-    span = otel_setup.tracer().start_as_current_span("gliformer.extract")
+    span = otel_setup.tracer().start_span("gliformer.extract")
     span.set_attribute("doc_chars", len(req.text))
     span.set_attribute("chunks", len(chunks))
     span.set_attribute("propagated", propagated)

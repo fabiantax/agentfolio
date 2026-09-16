@@ -115,3 +115,4 @@ curl -s localhost:18080/ner -H 'content-type: application/json' \
 - anchored A/B harness (base×large × label styles × thresholds)
 - config pre-fill: gazetteer seeding + schema defaults + aliases
 - Hetzner snapshot bake (blocked on Tailscale authkey)
+| v0.1.8 | zero-CDN browser stack (bun-bundled transformers.js + ort wasm from /assets — fixes iOS "Load failed": jsdelivr import killed by content blockers, no server request ever arrived) + OTel: spans to OpenObserve (requests, model_load, extract, bootstrap, client-error beacons via /telemetry) |

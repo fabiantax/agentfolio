@@ -19,6 +19,9 @@ import os
 
 OTEL_ENABLED = os.environ.get("OTEL_ENABLED", "1") == "1"
 OTEL_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+# Optional auth for the exporter (e.g. OpenObserve direct ingestion):
+# OTEL_OTLP_HEADERS="Authorization=Basic <b64>" — passed at runtime, never committed.
+OTEL_HEADERS = os.environ.get("OTEL_OTLP_HEADERS")
 SERVICE_NAME = "gliformer-demo"
 SERVICE_VERSION = "0.1.8"
 
@@ -50,10 +53,13 @@ def init_otel(app):
             }
         )
         _provider = TracerProvider(resource=resource)
-        _provider.add_span_processor(
-            BatchSpanProcessor(
-                OTLPSpanExporter(endpoint=OTEL_ENDPOINT + "/v1/traces")
+        exporter_kwargs = {"endpoint": OTEL_ENDPOINT + "/v1/traces"}
+        if OTEL_HEADERS:
+            exporter_kwargs["headers"] = dict(
+                item.split("=", 1) for item in OTEL_HEADERS.split(";") if "=" in item
             )
+        _provider.add_span_processor(
+            BatchSpanProcessor(OTLPSpanExporter(**exporter_kwargs))
         )
         trace.set_tracer_provider(_provider)
         FastAPIInstrumentor.instrument_app(app, tracer_provider=_provider)
@@ -75,6 +81,7 @@ class _NoopSpan:
 
 class _NoopTracer:
     def start_as_current_span(self, *a, **k): return _NoopSpan()
+    def start_span(self, *a, **k): return _NoopSpan()
 
 
 def _noop_tracer():

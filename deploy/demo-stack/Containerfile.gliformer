@@ -1,11 +1,26 @@
 # veld-extractors-gliformer — Knowledgator GLiFormer backend for the veld
-# /ner + /extract wire contract (third backend next to gliner2 + gliner-relex;
-# separate image per veld venv discipline — pins are mutually incompatible).
+# /ner + /extract wire contract (+ AgentFolio demo UI, browser-local LFM
+# chat, domain bootstrap, OTel observability).
 #
-# - Model:  knowledgator/gliformer-base-v1 (2026-09-11, Apache-2.0)
-# - CPU-only torch (demo VMs are CPU; saves ~2 GB vs the CUDA wheel)
-# - Model baked in (veld pattern: reproducibility over image size)
-# - Smoke-tested on strix CPU 2026-09-15: NER 94 ms / joint-rel 64 ms
+# Stage 1 (bundler): bun bundles transformers.js into a self-contained ESM
+#   file + copies the ort wasm runtime — served same-origin from /assets.
+#   ZERO external CDN deps in the browser (iOS content blockers killed the
+#   jsdelivr import — "Load failed" with no server request, 2026-09-16).
+# Stage 2 (runtime): python 3.12, CPU torch, gliformer, OTel SDK; GLiFormer
+#   AND the browser LFM2.5-350M ONNX weights baked in (reproducibility over
+#   size). Memory: fp32 load peaks >2GiB — run with >=3g cap (measured).
+FROM oven/bun:1 AS bundler
+WORKDIR /src
+RUN echo 'import * as tf from "@huggingface/transformers"; \
+export const { pipeline, env, TextStreamer, AutoTokenizer } = tf; \
+export default tf;' > entry.ts \
+ && bun add @huggingface/transformers@3.7.5 >/dev/null 2>&1 \
+ && bun build entry.ts --target=browser --outfile=transformers.bundle.mjs --minify \
+ && mkdir -p /out/ort \
+ && cp transformers.bundle.mjs /out/ \
+ && cp node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.* /out/ort/ \
+ && ls -la /out /out/ort
+
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
@@ -13,7 +28,9 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/models/hf-cache \
     TOKENIZERS_PARALLELISM=false \
     GLIFORMER_MODEL=knowledgator/gliformer-base-v1 \
-    GLIFORMER_DEVICE=cpu
+    GLIFORMER_DEVICE=cpu \
+    OTEL_ENABLED=1 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -28,30 +45,14 @@ RUN pip install \
     "opentelemetry-exporter-otlp-proto-http==1.29.0" \
     "opentelemetry-instrumentation-fastapi==0.50b0"
 
-# Self-host the browser JS stack (v0.1.8): transformers.js ESM bundle +
-# the exact pinned onnxruntime-web wasm assets, served from /assets —
-# ZERO external CDN deps (iOS content blockers killed the jsdelivr import;
-# "Load failed" on iPhone, no server request ever arrived).
-RUN ORT=onnxruntime-web@1.22.0-dev.20250409-89f8206ba4 && \
-    mkdir -p /assets/ort && \
-    curl -fsSL --retry 3 -o /assets/transformers.min.mjs \
-      "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5/dist/transformers.min.mjs" && \
-    curl -s "https://data.jsdelivr.com/v1/package/npm/$ORT/flat" \
-      | python3 -c "import json,sys; [print(f['name']) for f in json.load(sys.stdin)['files'] if f['name'].startswith('/dist/') and (f['name'].endswith('.wasm') or '.mjs' in f['name']) and 'bundle' not in f['name']]" \
-      > /tmp/ort-files.txt && \
-    wc -l /tmp/ort-files.txt && \
-    while read -r f; do curl -fsSL --retry 3 -o "/assets/ort/$(basename $f)" \
-      "https://cdn.jsdelivr.net/npm/$ORT$f"; done < /tmp/ort-files.txt && \
-    ls -la /assets/ort/ | head -20
-
-# Bake the checkpoint (offline-capable container).
+# GLiFormer checkpoint (server-side extraction model), offline-capable.
 RUN HF_HUB_DOWNLOAD_TIMEOUT=120 python -c "from huggingface_hub import snapshot_download; \
     p = snapshot_download('knowledgator/gliformer-base-v1', max_workers=2); \
     print('downloaded to', p)"
 
-# Bake the BROWSER model too (LFM2.5-350M ONNX, both dtypes) in HF layout so
-# transformers.js can be pointed at this same origin (env.remoteHost) —
-# repeat /local loads hit the browser disk cache, zero HF round-trips.
+# Browser model (LFM2.5-350M ONNX, both dtypes) in HF layout so
+# transformers.js points at this same origin — repeat /local loads hit the
+# browser disk cache, zero HF round-trips.
 RUN M=/models/hf/onnx-community/LFM2.5-350M-ONNX/resolve/main && \
     mkdir -p $M/onnx && cd $M && \
     for f in config.json generation_config.json tokenizer.json \
@@ -64,6 +65,10 @@ RUN M=/models/hf/onnx-community/LFM2.5-350M-ONNX/resolve/main && \
       curl -fsSL --retry 3 -o onnx/$f \
         "https://huggingface.co/onnx-community/LFM2.5-350M-ONNX/resolve/main/onnx/$f"; \
     done && ls -la onnx/
+
+# Browser JS assets from the bundler stage.
+COPY --from=bundler /out/transformers.bundle.mjs /assets/transformers.bundle.mjs
+COPY --from=bundler /out/ort/ /assets/ort/
 
 WORKDIR /app
 COPY otel_setup.py /app/otel_setup.py
