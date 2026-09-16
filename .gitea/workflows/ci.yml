@@ -6,18 +6,42 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
-    container: mcr.microsoft.com/dotnet/sdk:10.0
+    # Host lane (label-wedge fix): strix-main is a HOST runner (no docker socket) —
+    # container: jobs wedge forever on it. Run with the host's dotnet SDK instead.
+    runs-on: strix-main
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Restore
-        run: dotnet restore
-      - name: Build (warnaserror)
-        run: dotnet build -warnaserror --no-restore
-      - name: Test
-        run: dotnet test --no-build --verbosity minimal
-      - name: Clean-architecture gate (Atlas)
+
+      - name: SDK sanity
         run: |
-          curl -fsSL https://github.com/fabian/.../atlas -o /usr/local/bin/atlas || echo "WARN: atlas fetch skipped in CI (local-only gate)"
-          ./scripts/arch-gate.sh || true
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet --version
+
+      - name: Restore
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet restore
+
+      - name: Build (warnaserror)
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet build -warnaserror --no-restore
+          echo "BUILD_RC=$?"
+
+      - name: Test
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet test --no-build --verbosity minimal
+          echo "TEST_RC=$?"
+
+      - name: Clean-architecture gate (Atlas, host binary)
+        run: |
+          # Host atlas at ~/.local/bin/atlas (285MB, not fetchable in CI) — skip loudly, never silently
+          if [ ! -x "$HOME/.local/bin/atlas" ]; then
+            echo "::warning::atlas binary not present on runner — arch-gate SKIPPED (gate runs parent-side + nightly)"
+            exit 0
+          fi
+          rm -rf $(find . -type d \( -name bin -o -name obj \) 2>/dev/null) 2>/dev/null || true
+          ./scripts/arch-gate.sh
+          echo "GATE_RC=$?"
