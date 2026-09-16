@@ -6,15 +6,22 @@ on:
 
 jobs:
   build-test:
-    # k8s lane: ci-k8s runner executes jobs as PODS (containers work natively).
-    # Independent of the single-slot strix-runner host lane (which long GraphFusion
-    # jobs block). The host-lane variant needs no container:; this one uses the
-    # official SDK image so the build env is clean and reproducible.
+    # k8s lane: the ci-k8s runner label is registered HOST-mode
+    # (runner-config ConfigMap: `ci-k8s:host`) — steps run directly in the
+    # runner pod, and a `container:` key is fatal there: the host executor
+    # tries to start the job container via docker.sock, which the pod does
+    # not have (runs #50-54 all died at Checkout exactly this way, incl. on
+    # main). SDK comes from setup-dotnet per-run instead (same pattern as
+    # the working aliestax setup-node lane; egress + runner cache OK).
     runs-on: ci-k8s
-    container: mcr.microsoft.com/dotnet/sdk:10.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
 
       - name: SDK sanity
         run: dotnet --version
