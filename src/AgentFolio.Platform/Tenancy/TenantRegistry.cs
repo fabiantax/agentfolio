@@ -12,6 +12,7 @@ public sealed record TenantRecord(string TenantId, string Slug, long CreatedAt, 
 public sealed class TenantRegistry
 {
     private readonly string _connectionString;
+    private readonly Lazy<Task> _schemaOnce;
 
     public TenantRegistry(string globalDbPath)
     {
@@ -20,7 +21,14 @@ public sealed class TenantRegistry
             DataSource = globalDbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
         }.ToString();
+        // Fresh-DB boot (#45): a registry created against an empty/unseeded global.db
+        // must never crash callers with 'no such table: tenants' — the first query
+        // lazily ensures the schema (idempotent, once per registry instance).
+        _schemaOnce = new Lazy<Task>(() => EnsureSchemaAsync(), LazyThreadSafetyMode.ExecutionAndPublication);
     }
+
+    /// <summary>Ensures the schema before the first tenant read on this instance.</summary>
+    private Task EnsureSchemaOnceAsync() => _schemaOnce.Value;
 
     /// <summary>Path of the global db file (parent dir for tenant shard dirs).</summary>
     public string GlobalDbPath => new SqliteConnectionStringBuilder(_connectionString).DataSource;
@@ -107,6 +115,7 @@ CREATE TABLE IF NOT EXISTS users (
 
     public async Task<TenantRecord?> GetBySlugAsync(string slug, CancellationToken ct = default)
     {
+        await EnsureSchemaOnceAsync();
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();

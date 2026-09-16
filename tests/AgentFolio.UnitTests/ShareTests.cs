@@ -6,6 +6,7 @@ using AgentFolio.Platform;
 using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Migrations;
 using AgentFolio.Platform.Tenancy;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Slices.Share;
@@ -151,6 +152,45 @@ public class ShareTests : IDisposable
         var resp = await client.GetAsync("/share/does-not-exist");
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
         Assert.StartsWith("noindex", resp.Headers.GetValues("X-Robots-Tag").First());
+    }
+
+    [Fact]
+    public async Task Fresh_unseeded_db_showcase_returns_named_503_not_stack_trace()
+    {
+        // #45: cold boot against an empty global.db (no EnsureSchema, no tenants).
+        // The registry lazily ensures schema; the demo slug must fail HONESTLY with a
+        // named 503 — never an unhandled SqliteException 500 stack trace.
+        var dir = Directory.CreateTempSubdirectory("af-fresh-boot-");
+        try
+        {
+            var registry = new TenantRegistry(Path.Combine(dir.FullName, "global.db")); // schema NOT ensured
+            var shards = new TenantShardRegistry(registry.GlobalDbPath);
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            {
+                b.ConfigureServices(services =>
+                {
+                    services.RemoveAll<TenantRegistry>();
+                    services.RemoveAll<TenantShardRegistry>();
+                    services.AddSingleton(registry);
+                    services.AddSingleton(shards);
+                });
+            });
+            var client = factory.CreateClient();
+
+            var resp = await client.GetAsync("/share/showcase");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, resp.StatusCode);
+            var body = await resp.Content.ReadAsStringAsync();
+            Assert.Contains("showcase_not_seeded", body);
+            Assert.DoesNotContain("SqliteException", body);
+
+            // Non-demo slugs on a fresh registry stay 404 (not 503).
+            var other = await client.GetAsync("/share/does-not-exist");
+            Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+        }
+        finally
+        {
+            try { Directory.Delete(dir.FullName, recursive: true); } catch { }
+        }
     }
 
     [Fact]
