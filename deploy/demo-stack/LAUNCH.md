@@ -30,10 +30,10 @@ k3s gets a containerd mirror via `registries.yaml` in cloud-init).
 cd ~/Developer/personal/agentfolio/deploy/demo-stack
 
 podman build -f Containerfile.gliformer \
-  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.1 .
+  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.3 .
 
 podman run -d --name gliformer-demo -p 18080:8080 --memory 3g \
-  100.112.37.119:3200/fabiantax/gliformer:v0.1.1
+  100.112.37.119:3200/fabiantax/gliformer:v0.1.3
 # NOTE --memory 3g: fp32 model load PEAKS >2 GiB (OOMKilled at 2g, measured
 # 2026-09-15); steady-state RSS is ~1.7 GiB. Same numbers are in k8s limits.
 
@@ -52,7 +52,7 @@ at this service — same wire contract as the gliner2 bundle.
 ```bash
 podman login 100.112.37.119:3200 -u fabiantax \
   -p "$(token from ~/.config/gitea)"
-podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.1
+podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.3
 ```
 
 ## C. One-time — bake the k3s base snapshot (~10 min, then €0 idle)
@@ -126,8 +126,21 @@ Snapshot + Gitea registry image persist. Next demo = §D only.
   but WINS batch (39 ms/text @ bs16, 5 heads, one model) — this demo ships
   BASE, which is why its single-text CPU latency is ~115 ms. "I measured
   both and picked per workload" is the client story.
-- Input bound: >4000 chars → HTTP 413 (GLiFormer silently returns nothing
-  past ~4-5k effective tokens — measured in the VERDICT; we fail loud).
+- Long input (v0.1.2): >4000 chars auto-CHUNKS — sentence-aligned 3200-char
+  chunks, 2-sentence overlap at seams, offsets remapped to DOCUMENT
+  coordinates, results deduped. Measured: 10,267-char doc → 4 chunks, 39
+  entities, ALL injected entities found, every offset exact
+  (test_live_chunked.py; chunker invariants: test_chunker.py).
+  413 only beyond a 50k hard ceiling.
+- Progressive context (v0.1.3): entities found in chunks 1..N-1 are
+  re-matched in every later chunk + a final full-doc consolidation sweep —
+  a later chunk cannot "forget" what earlier chunks established. Model-found
+  always wins; propagated mentions carry source="propagated" and the
+  response reports the count. Verified by exact accounting (thr 0.7 stress:
+  model dropped 3 weak-context mentions, propagation rebuilt exactly 3).
+  `propagate:false` on the request A/Bs the delta live. Relations stay
+  model-only; gliformer 0.1.2 has no few-shot exemplar API (checked from
+  source) — this is deterministic context, honestly labeled.
 - GLiFormer is Knowledgator's framework (Apache-2.0, 2026-09-11) — a
   successor in the GLiNER family line, NOT of fastino's gliner2.5. Say it
   correctly in front of clients.

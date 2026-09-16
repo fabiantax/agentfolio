@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+
+      <ProjectReference Include="..\..\src\AgentFolio.Sandbox\AgentFolio.Sandbox.Extractor\AgentFolio.Sandbox.Extractor.csproj" />
+
+      <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
+
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+
+    <PackageReference Include="OpenAI" />
+
+    <PackageReference Include="coverlet.collector" />
+
+    <PackageReference Include="xunit" />
+
+    <PackageReference Include="xunit.runner.visualstudio" />
+
+    <ProjectReference Include="..\..\src\AgentFolio.Agents\AgentFolio.Agents.csproj" />
+
+    <ProjectReference Include="..\..\src\AgentFolio.Api\AgentFolio.Api.csproj" />
+
+    <ProjectReference Include="..\..\src\AgentFolio.Contracts\AgentFolio.Contracts.csproj" />
+
+    <ProjectReference Include="..\..\src\AgentFolio.Platform\AgentFolio.Platform.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Auth2\Slices.Auth2.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Saves\Slices.Saves.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Share\Slices.Share.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Skills\Slices.Skills.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Stars\Slices.Stars.csproj" />
+
+    <ProjectReference Include="..\..\src\Slices\Tenancy\Slices.Tenancy.csproj" />
+  </ItemGroup>
+
+</Project>

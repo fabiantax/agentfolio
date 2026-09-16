@@ -27,5 +27,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AgentFolio.UnitTests/AgentFolio.UnitTests.csproj" />
+    <Project Path="tests\AgentFolio.E2E\AgentFolio.E2E.csproj" />
   </Folder>
 </Solution>
