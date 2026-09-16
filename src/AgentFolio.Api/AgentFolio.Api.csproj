@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AgentFolio.Platform\AgentFolio.Platform.csproj" />
     <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Tenancy\Slices.Tenancy.csproj" />
   </ItemGroup>
 
 </Project>
