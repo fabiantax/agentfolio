@@ -117,3 +117,16 @@ Child salvage stats tonight: 5/5 waves needed parent fixes; 2 real logic bugs ca
 ctam-proto astra/kani-len2-rerun.log.
 Remaining (deploy-gated, not code): GitHub OAuth app registration, MinIO on k3s, NIM key,
 --migrate-single-to-tenant run against real data, chat-core script serving path.
+
+## CI GREEN + APP LIVE (2026-09-16 12:20)
+First fully-green CI run on main: b97c768 @ ci-k8s lane. Coverage in CI log:
+line 72.8% / branch 65.2% / method 82.5% (reportgenerator working in-pod).
+Issue #4 (CI) + #15 (arch-gate docs) CLOSED. Failure layers peeled today, in order:
+docker-socket (container: on host-mode runner) -> ICU runtime -> NETSDK1188 satellite
+locales (fixed repo-level: SatelliteResourceLanguages=en in Directory.Build.props —
+runner-agnostic). Lessons: (1) act_runner mangles nested heredocs in run: blocks;
+(2) ci-k8s is HOST-mode (no docker sock) — container jobs need a dind sidecar or a
+toolchain-image runner (fab-trader #991 pattern); (3) grep -c breaking && chains ate
+two commits today — always '; ' after grep.
+APP LIVE: http://100.112.37.119:8190 (/ -> /share/showcase, component served, gate 401s).
+Pending for full use: AGENTFOLIO_PASSWORD_HASH + NIM_BASE_URL/KEY env on the process.
