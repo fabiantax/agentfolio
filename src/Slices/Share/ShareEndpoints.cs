@@ -206,7 +206,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
     </aside>
     <footer>Built with .NET 10 · Microsoft Agent Framework · SQLite vec/FTS · <a href="/share/showcase">AgentFolio</a></footer>
   </main>
-  <script type="module" src="{{ChatScriptPlaceholderSrc}}"></script>
+  <script type="module" src="{{{ChatScriptPlaceholderSrc}}}"></script>
 </body>
 </html>
 """;
