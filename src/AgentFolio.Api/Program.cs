@@ -13,6 +13,16 @@ using Slices.Share;
 using AgentFolio.Platform.Migrations;
 
 var builder = WebApplication.CreateBuilder(args);
+// Fail-fast DI: validate the whole graph at build (dev/test). Bad registrations
+// (missing deps, captive deps, scoped-in-singleton) throw at startup, not at first request.
+if (!builder.Environment.IsProduction())
+{
+    builder.Host.UseDefaultServiceProvider(o =>
+    {
+        o.ValidateOnBuild = true;
+        o.ValidateScopes = true;
+    });
+}
 
 // s5-05 one-shot migration: --migrate-single-to-tenant (checked BEFORE builder.Build).
 if (args.Contains("--migrate-single-to-tenant"))
@@ -80,7 +90,10 @@ else
         "AGENTFOLIO_S3_ENDPOINT (and bucket/keys) must be set in Production — no silent in-memory fallback (AGENTS.md rule 1).");
 }
 builder.Services.AddSingleton<UploadService>();
-builder.Services.AddSingleton<ExtractionService>();
+// ExtractionService: same object store as uploads; extractor path from env (tests/ops pin it).
+builder.Services.AddSingleton(sp => new ExtractionService(
+    sp.GetRequiredService<IObjectStore>(),
+    Environment.GetEnvironmentVariable(ExtractionService.ExtractorEnvVar)));
 builder.Services.AddHostedService<UploadExpiryEnforcer>();
 
 var app = builder.Build();

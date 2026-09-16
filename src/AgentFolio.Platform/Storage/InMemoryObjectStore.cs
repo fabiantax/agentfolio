@@ -51,4 +51,13 @@ public sealed class InMemoryObjectStore : IObjectStore
             return Task.FromResult<long?>(_objects.TryGetValue(key, out var v) ? v.Bytes.LongLength : null);
         }
     }
+
+    public Task<IReadOnlyList<string>> ListByPrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        lock (_objects)
+        {
+            IReadOnlyList<string> keys = _objects.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(k => k, StringComparer.Ordinal).ToList();
+            return Task.FromResult(keys);
+        }
+    }
 }

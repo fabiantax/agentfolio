@@ -60,7 +60,7 @@ public static class ShareEndpoints
                 HttpOnly = true,
                 Expires = DateTimeOffset.UtcNow.AddHours(24),
                 SameSite = SameSiteMode.Lax,
-                Secure = true,
+                Secure = http.Request.IsHttps, // tailnet-http demo drops Secure cookies
             });
             http.Response.Headers["X-Robots-Tag"] = "noindex";
             return Results.Content(PortfolioPage(slug, tenant.TenantId), "text/html");

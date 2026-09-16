@@ -32,7 +32,13 @@ public sealed class ExtractionService
     }
 
     /// <summary>Object key for extracted text: tenants/{tid}/sessions/{sid}/extracted/{key}.txt.</summary>
-    public static string BuildExtractedKey(string uploadKey) => uploadKey + ".txt";
+    public static string BuildExtractedKey(string uploadKey)
+    {
+        // tenants/{tid}/sessions/{sid}/{sha256}.ext -> tenants/{tid}/sessions/{sid}/extracted/{sha256}.txt
+        var dir = Path.GetDirectoryName(uploadKey)!.Replace('\\', '/');
+        var file = Path.GetFileNameWithoutExtension(uploadKey);
+        return $"{dir}/extracted/{file}.txt";
+    }
 
     private sealed record ScratchFile(string InputPath, string OutputPath, string Dir);
 
@@ -107,9 +113,14 @@ public sealed class ExtractionService
     /// <summary>Spawns the extractor process; kills after Timeout.</summary>
     public (int ExitCode, string Stderr) RunExtractor(string inputPath, string outputPath, CancellationToken ct = default)
     {
+        // Resolve the CURRENT runtime's dotnet (e.g. ~/.dotnet/dotnet) — 'dotnet' may not
+        // be on PATH (measured: extractor never started because /usr/bin/dotnet absent).
+        var dotnet = Environment.GetEnvironmentVariable("DOTNET_ROOT") is string root
+            ? Path.Combine(root, "dotnet")
+            : System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "dotnet";
         var psi = new ProcessStartInfo
         {
-            FileName = "dotnet",
+            FileName = dotnet,
             Arguments = $"\"{_extractorPath}\" \"{inputPath}\" \"{outputPath}\"",
             WorkingDirectory = Path.GetTempPath(),
             UseShellExecute = false,
@@ -122,6 +133,7 @@ public sealed class ExtractionService
                 ["PATH"] = Environment.GetEnvironmentVariable("PATH") ?? "/usr/bin:/bin",
                 ["HOME"] = Path.GetTempPath(),
                 ["DOTNET_NOLOGO"] = "1",
+                ["DOTNET_ROOT"] = Path.GetDirectoryName(dotnet) ?? "",
                 ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
             },
         };

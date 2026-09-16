@@ -58,6 +58,7 @@ export class AgentFolioChatElement extends HTMLElement {
   }
 
   private lastUrl = '';
+  private fetchImpl: typeof fetch | null = null;
 
   private setStatus(s: string): void {
     if (this.statusEl) this.statusEl.textContent = s;
@@ -83,6 +84,35 @@ export class AgentFolioChatElement extends HTMLElement {
   private renderError(msg: string): void {
     this.appendBubble(msg, 'error');
     this.dispatchEvent(new CustomEvent('af-error', { detail: { message: msg }, bubbles: true, composed: true }));
+  }
+
+  /** Upload a document for the server-tier context (extracted text feeds /chat). */
+  async upload(file: File): Promise<void> {
+    if (this.busy) return;
+    const form = new FormData();
+    form.append('file', file);
+    this.setStatus('uploading');
+    this.appendBubble(`(uploaded ${file.name})`, 'user');
+    try {
+      const client = this.ensureClient();
+      if (!this.loggedIn) {
+        await client.login(this.password);
+        this.loggedIn = true;
+      }
+      const res = await this.fetchImpl?.(new URL('/api/uploads?sync=1', this.serverUrl || window.location.origin), { method: 'POST', body: form, credentials: 'include' } as RequestInit)
+        ?? await fetch(new URL('/api/uploads?sync=1', this.serverUrl || window.location.origin), { method: 'POST', body: form, credentials: 'include' });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`upload ${res.status}: ${body.slice(0, 120)}`);
+      }
+      const receipt = await res.json() as { extracted?: boolean; extractionError?: string | null };
+      this.setStatus(receipt.extracted === false ? 'doc: extraction failed' : 'doc ready');
+      if (receipt.extracted === false) {
+        this.appendBubble(`document stored, but text extraction failed (${receipt.extractionError ?? 'unknown'}) — server answers may ignore it`, 'error');
+      }
+    } catch (err) {
+      this.renderError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** Send one user message; routes to browser LLM when possible, else server SSE. */
@@ -213,10 +243,25 @@ export class AgentFolioChatElement extends HTMLElement {
     this.input = document.createElement('input');
     this.input.type = 'text';
     this.input.placeholder = 'Ask about the portfolio…';
+    const uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button';
+    uploadBtn.textContent = '📎';
+    uploadBtn.title = 'Upload a document (pdf/txt/md/docx) for grounded answers';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.pdf,.txt,.md,.docx';
+    fileInput.hidden = true;
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files?.[0];
+      if (f) void this.upload(f);
+      fileInput.value = '';
+    });
+
     const button = document.createElement('button');
     button.type = 'submit';
     button.textContent = 'Send';
-    form.append(this.input, button);
+    form.append(this.input, uploadBtn, fileInput, button);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       void this.send();

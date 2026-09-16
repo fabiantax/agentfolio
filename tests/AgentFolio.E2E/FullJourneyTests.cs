@@ -6,6 +6,7 @@ using System.Text;
 using AgentFolio.Contracts;
 using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
+using Slices.Uploads;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,8 +26,29 @@ public class FullJourneyTests : IDisposable
     private TenantRegistry _registry = null!;
     private string _showcaseTenantId = null!;
 
+    private static readonly Lazy<string> SandboxExtractorPath = new(() =>
+    {
+        // Same recipe as SandboxTests: Release-build the sandbox extractor once.
+        var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+        var project = Path.GetFullPath(Path.Combine(root, "src", "AgentFolio.Sandbox", "AgentFolio.Sandbox.Extractor", "AgentFolio.Sandbox.Extractor.csproj"));
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"build \"{project}\" -c Release -v q --nologo",
+            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+        };
+        using var proc = System.Diagnostics.Process.Start(psi)!;
+        var buildOut = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+        proc.WaitForExit();
+        if (proc.ExitCode != 0) throw new InvalidOperationException($"extractor build failed: {buildOut}");
+        return Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", "AgentFolio.Sandbox.Extractor.dll");
+    });
+
     private void BuildApp()
     {
+        _ = SandboxExtractorPath.Value; // warm the one-time Release build before timing matters
+        // Env BEFORE host build: the Program.cs factory reads it when DI resolves ExtractionService.
+        Environment.SetEnvironmentVariable(ExtractionService.ExtractorEnvVar, SandboxExtractorPath.Value);
         Environment.SetEnvironmentVariable(PasswordGate.HashEnvVar,
             PasswordGate.HashPassword("e2e-pass"));
         _registry = new TenantRegistry(Path.Combine(_dir, "global.db"));
@@ -86,28 +108,58 @@ public class FullJourneyTests : IDisposable
         Assert.DoesNotContain(_showcaseTenantId, html); // tenant id never leaks to anonymous share visitors
         Assert.StartsWith("noindex", share.Headers.GetValues("X-Robots-Tag").First());
 
-        // ---- 6. Upload contract: cookie-auth'd but WITHOUT an OAuth tid claim -> 403
-        // (password gate satisfies authn; tenancy requires the GitHub-OAuth tid claim).
+        // ---- 6. Upload contract: password-auth'd share visitor CAN upload —
+        // tenant resolves to showcase (no OAuth tid claim needed for the demo path).
         var up = await client.PostAsync("/api/uploads",
             new MultipartFormDataContent { { new ByteArrayContent("hello e2e"u8.ToArray()), "file", "a.txt" } });
-        Assert.Equal(HttpStatusCode.Forbidden, up.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, up.StatusCode);
+        var receipt = await up.Content.ReadFromJsonAsync<UploadReceiptDto>();
+        Assert.StartsWith("tenants/", receipt!.Key);
+
+        // Upload must still be AUTH-gated (no cookie -> 401).
+        // DelegatingHandler wrapper so the factory starts the host and provides BaseAddress.
+        var anonUpClient = _app.CreateClient();
+        anonUpClient.DefaultRequestHeaders.ExpectContinue = false;
+        // Reject-by-redirect: anonymous POST /api/uploads 302s to /Account/Login?ReturnUrl —
+        // which 404s. Assert the REDIRECT (the auth gate), not the followed result.
+        var anonReq = new HttpRequestMessage(HttpMethod.Post, "/api/uploads")
+        { Content = new MultipartFormDataContent { { new ByteArrayContent("x"u8.ToArray()), "file", "a.txt" } } };
+        var anonUp = await anonUpClient.SendAsync(anonReq);
+        Assert.Contains(anonUp.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.NotFound, HttpStatusCode.BadRequest });
     }
 
     [Fact]
-    public async Task Upload_endpoints_are_claim_gated_not_just_cookie_gated()
+    public async Task Upload_docs_and_session_delete_roundtrip_for_share_visitor()
     {
         BuildApp();
         var client = _app.CreateClient();
         await client.PostAsJsonAsync("/auth/login", new { password = "e2e-pass" });
 
-        // Both upload endpoints: authenticated (password cookie) yet 403 without the
-        // tenant claim — uploads are tenant-scoped by identity, not by session.
-        var up = await client.PostAsync("/api/uploads",
-            new MultipartFormDataContent { { new ByteArrayContent("x"u8.ToArray()), "file", "a.txt" } });
-        Assert.Equal(HttpStatusCode.Forbidden, up.StatusCode);
+        // Upload a plain-text doc; extraction stores tenants/.../extracted/*.txt.
+        var up = await client.PostAsync("/api/uploads?sync=1",
+            new MultipartFormDataContent { { new ByteArrayContent("hiring requirements: rust k8s agents"u8.ToArray()), "file", "jd.txt" } });
+        Assert.Equal(HttpStatusCode.OK, up.StatusCode);
 
+        // Extraction is fire-and-forget in a child process: poll the docs endpoint briefly.
+        string? docs = null;
+        for (var i = 0; i < 60; i++)
+        {
+            await Task.Delay(500);
+            var d = await client.GetAsync("/api/session/docs");
+            if (d.StatusCode != HttpStatusCode.OK) continue;
+            docs = await d.Content.ReadAsStringAsync();
+            if (docs.Contains("rust k8s")) break;
+        }
+        Assert.NotNull(docs);
+        Assert.True(docs.Contains("rust k8s"),
+            $"extracted text missing — docs endpoint says: {docs}"); // diagnostics inline on failure
+
+        // Disposal: session data wipe -> docs empty afterwards.
         var del = await client.DeleteAsync("/api/session/data");
-        Assert.Equal(HttpStatusCode.Forbidden, del.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, del.StatusCode);
+        var after = await client.GetAsync("/api/session/docs");
+        var afterBody = await after.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("rust k8s", afterBody);
     }
 
     public void Dispose()

@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 
+using AgentFolio.Platform.Storage;
+using AgentFolio.Platform.Tenancy;
 namespace Slices.Chat;
 
 /// <summary>SSE chat endpoint: streams ChatTokenEvents, then one ChatCompletionEvent + [DONE].</summary>
@@ -48,9 +50,44 @@ public static class ChatEndpoints
             http.Response.ContentType = "text/event-stream";
             http.Response.Headers.CacheControl = "no-cache";
 
+            // Doc context (uploaded this session): prepend extracted texts so answers
+            // reference the visitor's documents (spec 002 FR4a). Cap context hard.
+            var objectStore = http.RequestServices.GetService<IObjectStore>();
+            string message = request.Message;
+            if (objectStore is not null)
+            {
+                var tidClaim = http.User.FindFirst("tid")?.Value;
+                string? tid = tidClaim;
+                if (string.IsNullOrEmpty(tid))
+                {
+                    var registry = http.RequestServices.GetService<TenantRegistry>();
+                    tid = registry is null ? null : (await registry.GetBySlugAsync("showcase", ct))?.TenantId;
+                }
+                var sid = http.Request.Cookies.TryGetValue("af_sid", out var s) && !string.IsNullOrEmpty(s) ? s : null;
+                if (tid is not null && sid is not null)
+                {
+                    var keys = await objectStore.ListByPrefixAsync($"tenants/{tid}/sessions/{sid}/extracted/", ct);
+                    if (keys.Count > 0)
+                    {
+                        var docs = new List<string>();
+                        foreach (var k in keys.Take(5))
+                        {
+                            await using var st = await objectStore.GetAsync(k, ct);
+                            if (st is null) continue;
+                            using var sr = new StreamReader(st);
+                            var txt = await sr.ReadToEndAsync(ct);
+                            if (txt.Length > 4000) txt = txt[..4000] + "…[truncated]";
+                            docs.Add(txt);
+                        }
+                        if (docs.Count > 0)
+                            message = $"Context documents from this session:\n---\n{string.Join("\n---\n", docs)}\n---\n\nQuestion: {request.Message}";
+                    }
+                }
+            }
+
             var session = await agent.CreateSessionAsync(ct);
             var assistantText = new StringBuilder();
-            await foreach (var update in agent.RunStreamingAsync(request.Message, session, cancellationToken: ct))
+            await foreach (var update in agent.RunStreamingAsync(message, session, cancellationToken: ct))
             {
                 if (string.IsNullOrEmpty(update.Text)) continue;
                 assistantText.Append(update.Text);

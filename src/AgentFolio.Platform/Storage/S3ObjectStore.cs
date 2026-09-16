@@ -129,4 +129,22 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
     }
 
     public void Dispose() => _client.Dispose();
+
+    public async Task<IReadOnlyList<string>> ListByPrefixAsync(string prefix, CancellationToken ct = default)
+    {
+        var keys = new List<string>();
+        string? token = null;
+        do
+        {
+            var resp = await _client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = _bucket,
+                Prefix = prefix,
+                ContinuationToken = token,
+            }, ct);
+            keys.AddRange(resp.S3Objects.Select(o => o.Key));
+            token = resp.NextContinuationToken;
+        } while (token is not null);
+        return keys;
+    }
 }

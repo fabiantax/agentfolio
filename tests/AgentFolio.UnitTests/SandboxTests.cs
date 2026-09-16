@@ -153,7 +153,7 @@ public sealed class SandboxTests : IDisposable
         await _store.PutAsync("tenants/t/sessions/s/abc.txt", new MemoryStream(bytes, writable: false), "text/plain");
         var svc = new ExtractionService(_store, ExtractorDll.Value);
         var key = await svc.ExtractAsync("t", "s", "tenants/t/sessions/s/abc.txt");
-        Assert.Equal("tenants/t/sessions/s/abc.txt.txt", key);
+        Assert.Equal("tenants/t/sessions/s/extracted/abc.txt", key);
         await using var extracted = await _store.GetAsync(key!);
         Assert.NotNull(extracted);
         using var reader = new StreamReader(extracted!, Encoding.UTF8);

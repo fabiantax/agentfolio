@@ -17,4 +17,7 @@ public interface IObjectStore
 
     /// <summary>Content length in bytes, or null when the object does not exist.</summary>
     Task<long?> StatAsync(string key, CancellationToken ct = default);
+
+    /// <summary>Keys under <paramref name="prefix"/> (lexicographic). Used for session doc context.</summary>
+    Task<IReadOnlyList<string>> ListByPrefixAsync(string prefix, CancellationToken ct = default);
 }
