@@ -105,10 +105,13 @@ public sealed class ChatHarness : IDisposable
     /// <summary>Uploads one source as .txt through the real upload+extraction path (sync mode).</summary>
     public async Task SeedSourceAsync(HttpClient client, EvalSource source)
     {
+        // Prepend the product's uploader-provenance header (chat reads `Source: <url>`
+        // to resolve citation URLs) — same contract a real user's sourced doc carries.
+        var content = $"Source: {source.Url}\n{source.Text}";
         var up = await client.PostAsync("/api/uploads?sync=1",
             new MultipartFormDataContent
             {
-                { new ByteArrayContent(Encoding.UTF8.GetBytes(source.Text)), "file", $"{source.Id}.txt" }
+                { new ByteArrayContent(Encoding.UTF8.GetBytes(content)), "file", $"{source.Id}.txt" }
             });
         up.EnsureSuccessStatusCode();
         var body = await up.Content.ReadAsStringAsync();

@@ -10,6 +10,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Slices.Chat;
+using Slices.Uploads;
 using Xunit;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
@@ -126,6 +127,91 @@ public class ChatTests : IDisposable
         Assert.All(turns, t => Assert.Equal(conversationId, t.ConversationId));
     }
 
+    [Fact]
+    public async Task PostChat_WithSessionDoc_CitationsResolveFromDocMarkers()
+    {
+        // Real tenancy + object store so the doc-context path (upload -> extracted ->
+        // chat -> [DOC n] markers -> citations) runs end-to-end, fake only the model.
+        Environment.SetEnvironmentVariable("AGENTFOLIO_DB_PATH", _dbPath);
+        var dir = Directory.CreateTempSubdirectory("af-cite-");
+        // The sandbox extractor must be built + pinned like SandboxTests/E2E (the
+        // default AppContext.BaseDirectory path does not exist in the test host).
+        using (var gate = new System.Threading.Mutex(false, "AgentFolio.ExtractorBuildLock"))
+        {
+            gate.WaitOne();
+            try
+            {
+                var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+                var project = Path.Combine(repoRoot, "src", "AgentFolio.Sandbox", "AgentFolio.Sandbox.Extractor", "AgentFolio.Sandbox.Extractor.csproj");
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"build \"{project}\" -c Release -v q --nologo",
+                    RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+                };
+                using var proc = System.Diagnostics.Process.Start(psi)!;
+                var buildOut = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+                proc.WaitForExit();
+                if (proc.ExitCode != 0) throw new InvalidOperationException($"extractor build failed: {buildOut}");
+                Environment.SetEnvironmentVariable(ExtractionService.ExtractorEnvVar,
+                    Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", "AgentFolio.Sandbox.Extractor.dll"));
+            }
+            finally { gate.ReleaseMutex(); }
+        }
+        var registry = new AgentFolio.Platform.Tenancy.TenantRegistry(Path.Combine(dir.FullName, "global.db"));
+        await registry.EnsureSchemaAsync();
+        await registry.CreateTenantAsync("showcase");
+        var shards = new AgentFolio.Platform.Tenancy.TenantShardRegistry(registry.GlobalDbPath);
+        try
+        {
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            {
+                b.ConfigureServices(services =>
+                {
+                    services.RemoveAll<AgentFolio.Platform.Tenancy.TenantRegistry>();
+                    services.RemoveAll<AgentFolio.Platform.Tenancy.TenantShardRegistry>();
+                    services.AddSingleton(registry);
+                    services.AddSingleton(shards);
+                    services.RemoveAll<IChatClient>();
+                    services.AddKeyedSingleton<IChatClient>("nim", new CitingFakeChatClient());
+                });
+            });
+            var client = LoggedInClient(factory);
+
+            // Seed one session doc carrying uploader provenance (Source: URL).
+            var doc = "Source: https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14\n"
+                    + "C# 14 extension members add extension properties and static members.\n";
+            var up = await client.PostAsync("/api/uploads?sync=1",
+                new MultipartFormDataContent { { new System.Net.Http.ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(doc)), "file", "csharp14.txt" } });
+            up.EnsureSuccessStatusCode();
+            var upBody = await up.Content.ReadAsStringAsync();
+            Assert.Contains("\"extracted\":true", upBody);
+
+            var response = await client.PostAsJsonAsync("/chat", new ChatRequest(null, "which feature?", null));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+
+            // Streamed tokens carry NO raw markers (stripped before SSE).
+            Assert.DoesNotContain("[DOC", body[..body.IndexOf("\"citations\"", StringComparison.Ordinal)]);
+
+            // Completion event resolves the cited doc into a real citation.
+            var doneLine = body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .First(l => l.StartsWith("data: ") && l.Contains("\"citations\""));
+            using var doc2 = System.Text.Json.JsonDocument.Parse(doneLine["data: ".Length..]);
+            var cits = doc2.RootElement.GetProperty("citations");
+            Assert.Equal(1, cits.GetArrayLength());
+            var cit = cits[0];
+            Assert.Equal("https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14", cit.GetProperty("url").GetString());
+            Assert.Equal("Session document 1 — C# 14 extension members add extension properties and stat…",
+                cit.GetProperty("title").GetString());
+            Assert.Contains("extension members", cit.GetProperty("snippet").GetString());
+        }
+        finally
+        {
+            try { Directory.Delete(dir.FullName, recursive: true); } catch { }
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try { return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
@@ -148,6 +234,28 @@ public class ChatTests : IDisposable
                 await Task.Yield();
                 yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
             }
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+    }
+
+    /// <summary>Fake model that cites [DOC 1] like an instructed model would.</summary>
+    private sealed class CitingFakeChatClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "answer [DOC 1]")));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "The extension members feature [DOC 1] ships with ");
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, ".NET 10 [DOC 1].");
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;

@@ -50,10 +50,16 @@ public static class ChatEndpoints
             http.Response.ContentType = "text/event-stream";
             http.Response.Headers.CacheControl = "no-cache";
 
-            // Doc context (uploaded this session): prepend extracted texts so answers
-            // reference the visitor's documents (spec 002 FR4a). Cap context hard.
+            // Doc context (uploaded this session): prepend labeled, extracted texts
+            // so answers reference the visitor's documents (spec 002 FR4a) AND can
+            // cite them. Each doc is labeled [DOC n]; a leading `Source: <url>` line
+            // in the extracted text supplies the citation URL (uploader-provenance,
+            // spec 002 FR4b); the answer is instructed to cite [DOC n] markers which
+            // this endpoint resolves into real citations. Cap context hard.
             var objectStore = http.RequestServices.GetService<IObjectStore>();
             string message = request.Message;
+            var citations = new List<ChatCitation>();
+            (string Text, string? Url)[]? ctxDocs = null;
             if (objectStore is not null)
             {
                 var tidClaim = http.User.FindFirst("tid")?.Value;
@@ -81,7 +87,7 @@ public static class ChatEndpoints
 
                     if (keys.Count > 0)
                     {
-                        var docs = new List<string>();
+                        var docs = new List<(string text, string? url)>();
                         foreach (var k in keys.Take(5))
                         {
                             await using var st = await objectStore.GetAsync(k, ct);
@@ -89,10 +95,21 @@ public static class ChatEndpoints
                             using var sr = new StreamReader(st);
                             var txt = await sr.ReadToEndAsync(ct);
                             if (txt.Length > 4000) txt = txt[..4000] + "…[truncated]";
-                            docs.Add(txt);
+                            docs.Add((txt, ExtractSourceUrl(txt)));
                         }
                         if (docs.Count > 0)
-                            message = $"Context documents from this session:\n---\n{string.Join("\n---\n", docs)}\n---\n\nQuestion: {request.Message}";
+                        {
+                            var sb = new StringBuilder();
+                            sb.AppendLine("Context documents from this session (cite the ones you use as [DOC 1], [DOC 2], … in your answer):");
+                            for (var i = 0; i < docs.Count; i++)
+                            {
+                                sb.AppendLine($"--- [DOC {i + 1}] ---");
+                                sb.AppendLine(docs[i].text);
+                            }
+                            sb.AppendLine($"---{Environment.NewLine}{Environment.NewLine}Question: {request.Message}");
+                            message = sb.ToString();
+                            ctxDocs = docs.ToArray();
+                        }
                     }
                 }
             }
@@ -103,11 +120,26 @@ public static class ChatEndpoints
             {
                 if (string.IsNullOrEmpty(update.Text)) continue;
                 assistantText.Append(update.Text);
-                await WriteSseAsync(http.Response, JsonSerializer.Serialize(new ChatTokenEvent(update.Text), JsonOptions), ct);
+                await WriteSseAsync(http.Response, JsonSerializer.Serialize(new ChatTokenEvent(CleanMarkers(update.Text)), JsonOptions), ct);
             }
 
-            // Citations empty for now — retrieval wiring lands in a later slice.
-            var completion = new ChatCompletionEvent(conversationId, tier, []);
+            // Resolve [DOC n] markers the model cited into real ChatCitations (url +
+            // title + snippet from the source document) — the constitution §2 wiring.
+            if (ctxDocs is not null && ctxDocs.Length > 0)
+            {
+                foreach (var idx in ExtractCitedDocIndices(assistantText.ToString()))
+                {
+                    if (idx < 1 || idx > ctxDocs.Length) continue;
+                    var (text, url) = ctxDocs[idx - 1];
+                    var clean = StripSourceLine(text);
+                    citations.Add(new ChatCitation(
+                        url ?? "/api/session/docs",
+                        $"Session document {idx}{(url is null ? "" : $" — {ShortTitle(clean)}")}",
+                        Snippet(clean, 240)));
+                }
+            }
+
+            var completion = new ChatCompletionEvent(conversationId, tier, citations);
             await WriteSseAsync(http.Response, JsonSerializer.Serialize(completion, JsonOptions), ct);
             await WriteSseAsync(http.Response, "[DONE]", ct);
 
@@ -133,6 +165,71 @@ public static class ChatEndpoints
     /// </summary>
     internal static IChatClient ResolveChatClient(IServiceProvider sp)
         => sp.GetRequiredKeyedService<IChatClient>(NimChatClientFactory.ClientName);
+
+    /// <summary>Regex for [DOC n] markers the model may cite (case-insensitive).</summary>
+    private static readonly System.Text.RegularExpressions.Regex DocMarkerRegex =
+        new(@"\[DOC\s+(\d+)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Distinct, ordered doc indices the answer cited via [DOC n] markers.</summary>
+    internal static IEnumerable<int> ExtractCitedDocIndices(string answer)
+    {
+        var seen = new HashSet<int>();
+        foreach (System.Text.RegularExpressions.Match m in DocMarkerRegex.Matches(answer))
+        {
+            if (int.TryParse(m.Groups[1].Value, out var idx) && seen.Add(idx))
+                yield return idx;
+        }
+    }
+
+    /// <summary>Strips [DOC n] markers from a token before streaming it to the client.</summary>
+    internal static string CleanMarkers(string token)
+        => DocMarkerRegex.Replace(token, string.Empty);
+
+    /// <summary>Pulls a `Source: http…` line from extracted doc text (uploader provenance).</summary>
+    internal static string? ExtractSourceUrl(string text)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            var t = line.Trim();
+            if (t.StartsWith("Source:", StringComparison.OrdinalIgnoreCase))
+            {
+                var url = t["Source:".Length..].Trim();
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                    && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                    return url;
+            }
+            if (t.Length > 0 && !t.StartsWith("---", StringComparison.Ordinal)) break; // only leading Source lines count
+        }
+        return null;
+    }
+
+    /// <summary>Removes the leading Source line for snippet display.</summary>
+    internal static string StripSourceLine(string text)
+    {
+        var lines = text.Split('\n');
+        return lines.Length > 0 && lines[0].TrimStart().StartsWith("Source:", StringComparison.OrdinalIgnoreCase)
+            ? string.Join('\n', lines[1..]).TrimStart()
+            : text;
+    }
+
+    /// <summary>First non-empty line capped at 60 chars, for the citation title.</summary>
+    internal static string ShortTitle(string text)
+    {
+        foreach (var line in text.Split('\n'))
+        {
+            var t = line.Trim();
+            if (t.Length == 0) continue;
+            return t.Length <= 60 ? t : t[..57] + "…";
+        }
+        return "document";
+    }
+
+    /// <summary>Single-line snippet capped at <paramref name="max"/> chars.</summary>
+    internal static string Snippet(string text, int max)
+    {
+        var single = string.Join(' ', text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return single.Length <= max ? single : single[..(max - 1)] + "…";
+    }
 
     private static async Task WriteSseAsync(HttpResponse response, string payload, CancellationToken ct)
     {
