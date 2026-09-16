@@ -197,79 +197,109 @@ export class AgentFolioChatElement extends HTMLElement {
     this.transcript?.appendChild(wrap);
   }
 
-  private render(): void {
-    const style = document.createElement('style');
-    style.textContent = `
-      :host { display:block; font: 14px/1.5 system-ui, sans-serif; color:#1a1a2e;
-              border:1px solid #e2e2ec; border-radius:12px; overflow:hidden; background:#fff; }
-      .head { display:flex; align-items:center; gap:8px; padding:10px 14px;
-              background:#f6f6fb; border-bottom:1px solid #e2e2ec; }
-      .head strong { font-size:13px; letter-spacing:.02em; }
-      .tier { font-size:11px; padding:2px 8px; border-radius:999px; background:#e8e8f5; color:#555; }
-      .tier[data-tier="Browser"] { background:#e0f5e8; color:#186a3b; }
-      .tier[data-tier="Server"] { background:#e8f0fb; color:#1a4d8f; }
-      .status { margin-left:auto; font-size:11px; color:#888; }
-      .log { height:280px; overflow-y:auto; padding:12px; display:flex;
-             flex-direction:column; gap:8px; background:#fcfcfe; }
-      .bubble { max-width:78%; padding:8px 12px; border-radius:12px; white-space:pre-wrap; }
-      .bubble.user { align-self:flex-end; background:#3b5bdb; color:#fff; border-bottom-right-radius:4px; }
-      .bubble.assistant { align-self:flex-start; background:#eeeef6; border-bottom-left-radius:4px; }
-      .bubble.error { align-self:stretch; background:#fdecec; color:#a02020; max-width:100%; }
-      .citations { align-self:flex-start; display:flex; flex-wrap:wrap; gap:6px; }
-      .citations a { font-size:12px; color:#3b5bdb; text-decoration:none; background:#eef1fd;
-                     padding:3px 8px; border-radius:6px; }
-      form { display:flex; gap:8px; padding:10px; border-top:1px solid #e2e2ec; }
-      input { flex:1; padding:8px 10px; border:1px solid #d8d8e6; border-radius:8px; font:inherit; }
-      button { padding:8px 14px; border:0; border-radius:8px; background:#3b5bdb; color:#fff;
-               font:inherit; cursor:pointer; }
-      button:disabled { opacity:.5; cursor:default; }
+    private render(): void {
+      const style = document.createElement('style');
+      // Design tokens per DESIGN.md (AA-verified); shadow-scoped copies of the page vars.
+      style.textContent = `
+      :host {
+        display: block; font: 0.9375rem/1.55 'Inter', system-ui, sans-serif;
+        color: #E6EDF3; background: #151B23;
+        --af-bg: #0D1117; --af-surface: #151B23; --af-raised: #1C2430; --af-border: #2A3441;
+        --af-text: #E6EDF3; --af-text-2: #9BA8B7; --af-accent: #4C8DFF; --af-accent-btn: #2B67D4;
+        --af-accent-btn-hover: #2E6ADB; --af-success: #3FB950; --af-danger: #F85149;
+        --af-mono: 'JetBrains Mono', ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      .head { display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+              background: var(--af-raised); border-bottom: 1px solid var(--af-border); }
+      .head strong { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; }
+      .tier { font: 500 0.6875rem/1.4 var(--af-mono); letter-spacing: 0.08em;
+              text-transform: uppercase; padding: 3px 10px; border-radius: 999px;
+              background: var(--af-raised); color: var(--af-text-2); border: 1px solid var(--af-border); }
+      .tier[data-tier="Browser"] { background: #0E2A13; color: var(--af-success); border-color: #1B4724; }
+      .tier[data-tier="Server"] { background: #12233F; color: var(--af-accent); border-color: #1F3A63; }
+      .status { margin-left: auto; font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2); }
+      .log { height: 340px; overflow-y: auto; padding: 18px; display: flex;
+             flex-direction: column; gap: 12px; background: var(--af-surface); }
+      .log:empty::after { content: 'Ask anything - answers cite their sources.';
+             color: var(--af-text-2); font-size: 0.875rem; margin: auto; }
+      .bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; }
+      .bubble.user { align-self: flex-end; background: #12325E; border-bottom-right-radius: 4px; }
+      .bubble.assistant { align-self: flex-start; background: var(--af-raised);
+                          border: 1px solid var(--af-border); border-bottom-left-radius: 4px; }
+      .bubble.error { align-self: stretch; background: #3A1214; color: var(--af-danger);
+                      border: 1px solid #5C1E22; max-width: 100%; border-radius: 10px; }
+      .citations { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; }
+      .citations a { font: 500 0.75rem/1.4 var(--af-mono); color: var(--af-accent);
+                     text-decoration: none; background: var(--af-bg);
+                     border: 1px solid var(--af-border); padding: 4px 10px; border-radius: 6px; }
+      .citations a:hover { border-color: var(--af-accent); }
+      form { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--af-border);
+             background: var(--af-raised); }
+      input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid var(--af-border);
+             border-radius: 10px; font: inherit; color: var(--af-text);
+             background: #0B0F14; outline: none; }
+      input[type="text"]:focus { border-color: var(--af-accent); }
+      input[type="text"]::placeholder { color: var(--af-text-2); }
+      button { padding: 10px 16px; border: 0; border-radius: 10px; font: 600 0.875rem/1 inherit;
+               cursor: pointer; transition: background 0.15s ease; }
+      button[type="submit"] { background: var(--af-accent-btn); color: #fff; }
+      button[type="submit"]:hover { background: var(--af-accent-btn-hover); }
+      button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+      button[type="button"] { background: transparent; color: var(--af-text-2);
+              border: 1px solid var(--af-border); font-size: 1rem; padding: 10px 12px; }
+      button[type="button"]:hover { color: var(--af-text); border-color: var(--af-text-2); }
+      @media (max-width: 640px) { .log { height: 280px; } .bubble { max-width: 92%; } }
     `;
-    this.shadowRoot!.append(style);
+      this.shadowRoot!.append(style);
 
-    const head = document.createElement('div');
-    head.className = 'head';
-    const title = document.createElement('strong');
-    title.textContent = 'AgentFolio Chat';
-    this.tierBadge = document.createElement('span');
-    this.tierBadge.className = 'tier';
-    this.statusEl = document.createElement('span');
-    this.statusEl.className = 'status';
-    head.append(title, this.tierBadge, this.statusEl);
+      const head = document.createElement('div');
+      head.className = 'head';
+      const title = document.createElement('strong');
+      title.textContent = 'Portfolio Chat';
+      this.tierBadge = document.createElement('span');
+      this.tierBadge.className = 'tier';
+      this.statusEl = document.createElement('span');
+      this.statusEl.className = 'status';
+      head.append(title, this.tierBadge, this.statusEl);
 
-    this.transcript = document.createElement('div');
-    this.transcript.className = 'log';
+      this.transcript = document.createElement('div');
+      this.transcript.className = 'log';
 
-    const form = document.createElement('form');
-    this.input = document.createElement('input');
-    this.input.type = 'text';
-    this.input.placeholder = 'Ask about the portfolio…';
-    const uploadBtn = document.createElement('button');
-    uploadBtn.type = 'button';
-    uploadBtn.textContent = '📎';
-    uploadBtn.title = 'Upload a document (pdf/txt/md/docx) for grounded answers';
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.pdf,.txt,.md,.docx';
-    fileInput.hidden = true;
-    uploadBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => {
-      const f = fileInput.files?.[0];
-      if (f) void this.upload(f);
-      fileInput.value = '';
-    });
+      const form = document.createElement('form');
+      this.input = document.createElement('input');
+      this.input.type = 'text';
+      this.input.placeholder = 'Ask about this portfolio\u2026';
+      this.input.setAttribute('aria-label', 'Message');
 
-    const button = document.createElement('button');
-    button.type = 'submit';
-    button.textContent = 'Send';
-    form.append(this.input, uploadBtn, fileInput, button);
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      void this.send();
-    });
+      const uploadBtn = document.createElement('button');
+      uploadBtn.type = 'button';
+      uploadBtn.textContent = '\u{1F4CE}';
+      uploadBtn.title = 'Upload a document (pdf/txt/md/docx) for grounded answers';
+      uploadBtn.setAttribute('aria-label', 'Upload document');
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.pdf,.txt,.md,.docx';
+      fileInput.hidden = true;
+      uploadBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', () => {
+        const f = fileInput.files?.[0];
+        if (f) void this.upload(f);
+        fileInput.value = '';
+      });
 
-    this.shadowRoot!.append(head, this.transcript, form);
+      const button = document.createElement('button');
+      button.type = 'submit';
+      button.textContent = 'Send';
+      form.append(this.input, uploadBtn, fileInput, button);
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        void this.send();
+      });
+
+      this.shadowRoot!.append(head, this.transcript, form);
+    }
   }
-}
 
 if (!customElements.get('agentfolio-chat')) {
   customElements.define('agentfolio-chat', AgentFolioChatElement);

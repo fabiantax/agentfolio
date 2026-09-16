@@ -77,6 +77,20 @@ const MODEL = "onnx-community/LFM2.5-350M-ONNX";
 const DTYPE = hasGPU ? "q4f16" : "q4";
 let pipe = null, busy = false;
 
+// --- client telemetry: failures beam to /telemetry → OTel (v0.1.8) ---
+function beacon(event, stage, error) {
+  try {
+    navigator.sendBeacon("/telemetry", JSON.stringify({
+      event, stage,
+      error: String(error && error.message || error).slice(0, 400),
+      backend: hasGPU ? "webgpu" : "wasm",
+      url: location.pathname, model: MODEL,
+    }));
+  } catch (_) {}
+}
+window.addEventListener("error", e => beacon("window_error", "global", e.error || e.message));
+window.addEventListener("unhandledrejection", e => beacon("unhandled_rejection", "global", e.reason));
+
 function add(role, text) {
   const d = document.createElement("div");
   d.className = "msg " + (role === "user" ? "user" : "ai");
@@ -87,39 +101,47 @@ function add(role, text) {
   return d;
 }
 
+let _mod = null;  // cached transformers.js module (same-origin /assets)
+
 async function load() {
   if (pipe) return;
   $("load").disabled = true;
   $("loadstats").innerHTML = "downloading model + tokenizer…";
-  const { pipeline, env } = await import(
-    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
-  env.allowLocalModels = false;
-  // serve weights from THIS origin (HF layout under /models/) — repeat
-  // loads read the browser disk cache (immutable headers), zero HF
-  // round-trips, no CORS preflights. Falls back to huggingface.co if the
-  // host has no baked files.
-  try {
-    const probe = await fetch("/models/" + MODEL + "/resolve/main/config.json",
-                              {method: "HEAD"});
-    if (probe.ok) env.remoteHost = window.location.origin + "/models/";
-  } catch (_) { /* keep HF default */ }
   const t0 = performance.now();
-  pipe = await pipeline("text-generation", MODEL, {
-    dtype: DTYPE, device: hasGPU ? "webgpu" : "wasm",
-    progress_callback: p => {
-      if (p.status === "progress" && p.total) {
-        const pct = Math.round(p.loaded / p.total * 100);
-        $("prog").style.width = pct + "%";
-        $("loadstats").innerHTML = p.file.includes("tokenizer")
-          ? "tokenizer…" : p.file + " — " + pct + "%";
-      }
-    },
-  });
-  const secs = ((performance.now() - t0) / 1000).toFixed(1);
-  $("prog").style.width = "100%";
-  $("loadstats").innerHTML =
-    "loaded <b>" + MODEL + "</b> (" + DTYPE + ", " + secs + " s) on <b>" +
-    (hasGPU ? "WebGPU" : "WASM") + "</b> — cached for next visits";
+  try {
+    _mod = await import("/assets/transformers.min.mjs");  // SAME-ORIGIN — no CDN (iOS content blockers killed the jsdelivr import)
+    const { pipeline, env } = _mod;
+    env.allowLocalModels = false;
+    env.backends.onnx.wasm.wasmPaths = "/assets/ort/";    // self-hosted ort wasm
+    // weights from THIS origin (HF layout under /models/, immutable cache)
+    try {
+      const probe = await fetch("/models/" + MODEL + "/resolve/main/config.json",
+                                {method: "HEAD"});
+      if (probe.ok) env.remoteHost = window.location.origin + "/models/";
+    } catch (_) { /* keep HF default */ }
+    pipe = await pipeline("text-generation", MODEL, {
+      dtype: DTYPE, device: hasGPU ? "webgpu" : "wasm",
+      progress_callback: p => {
+        if (p.status === "progress" && p.total) {
+          const pct = Math.round(p.loaded / p.total * 100);
+          $("prog").style.width = pct + "%";
+          $("loadstats").innerHTML = p.file.includes("tokenizer")
+            ? "tokenizer…" : p.file + " — " + pct + "%";
+        }
+      },
+    });
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    $("prog").style.width = "100%";
+    $("loadstats").innerHTML =
+      "loaded <b>" + MODEL + "</b> (" + DTYPE + ", " + secs + " s) on <b>" +
+      (hasGPU ? "WebGPU" : "WASM") + "</b> — cached for next visits";
+  } catch (e) {
+    beacon("load_failed", "session", e);
+    $("loadstats").innerHTML =
+      '<span class="err">load failed: ' + String(e && e.message || e).slice(0, 200) +
+      " — reported to telemetry</span>";
+    throw e;
+  } finally { $("load").disabled = false; }
 }
 
 // LFM2.5 chat template (from the model card) — built manually so it works
@@ -133,12 +155,12 @@ function chatPrompt(user) {
 async function send(text) {
   if (busy) return;
   if (!pipe) await load();
+  if (!_mod) return;
   busy = true; $("send").disabled = true;
   add("user", text);
   const node = add("assistant", "");
   const t0 = performance.now(); let n = 0;
-  const { TextStreamer } = await import(
-    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
+  const { TextStreamer } = _mod;  // same cached module — still zero CDN calls
   const streamer = new TextStreamer(pipe.tokenizer, {
     skip_prompt: true, skip_special_tokens: true,
     callback_function: t => { n += t.length; node.textContent += t; $("log").scrollTop = 1e9; },
@@ -157,7 +179,8 @@ async function send(text) {
       (toks / dt).toFixed(1) + " tok/s</b> · backend <b>" + (hasGPU ? "WebGPU" : "WASM") +
       "</b> · zero network calls";
   } catch (e) {
-    node.textContent = "error: " + e;
+    beacon("gen_failed", "generate", e);
+    node.textContent = "error (reported): " + e;
   } finally { busy = false; $("send").disabled = false; }
 }
 

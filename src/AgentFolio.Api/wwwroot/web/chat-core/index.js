@@ -1,4 +1,4 @@
-class f {
+class h {
   constructor() {
     this.buffer = "";
   }
@@ -8,9 +8,9 @@ class f {
     const e = [];
     let r;
     for (; (r = this.buffer.search(/\r?\n\r?\n/)) !== -1; ) {
-      const s = this.buffer.slice(0, r);
+      const n = this.buffer.slice(0, r);
       this.buffer = this.buffer.slice(r).replace(/^\r?\n\r?\n/, "");
-      const o = u(s);
+      const o = u(n);
       o && e.push(o);
     }
     return e;
@@ -23,8 +23,8 @@ class f {
     return this.buffer = "", t ? [t] : [];
   }
 }
-function u(i) {
-  const t = i.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
+function u(a) {
+  const t = a.split(/\r?\n/).filter((n) => n.startsWith("data:")).map((n) => n.slice(5).replace(/^ /, ""));
   if (t.length === 0) return null;
   const e = t.join(`
 `);
@@ -37,9 +37,9 @@ function u(i) {
   }
   return b(r);
 }
-function b(i) {
-  if (typeof i == "object" && i !== null) {
-    const t = i;
+function b(a) {
+  if (typeof a == "object" && a !== null) {
+    const t = a;
     if (typeof t.text == "string" && t.conversationId === void 0)
       return { kind: "token", text: t.text };
     if (typeof t.conversationId == "string") {
@@ -56,9 +56,9 @@ function b(i) {
       };
     }
   }
-  return { kind: "unknown", raw: JSON.stringify(i) };
+  return { kind: "unknown", raw: JSON.stringify(a) };
 }
-class g {
+class m {
   constructor(t, e = fetch) {
     this.serverUrl = t, this.fetchImpl = e;
   }
@@ -85,41 +85,41 @@ class g {
         credentials: "include",
         body: JSON.stringify({ message: t })
       });
-    } catch (a) {
-      e.onError(a instanceof Error ? a : new Error(String(a)));
+    } catch (i) {
+      e.onError(i instanceof Error ? i : new Error(String(i)));
       return;
     }
     if (!r.ok || !r.body) {
       e.onError(new Error(`chat request failed: ${r.status}`));
       return;
     }
-    const s = new f(), o = r.body.getReader(), n = new TextDecoder();
+    const n = new h(), o = r.body.getReader(), s = new TextDecoder();
     try {
       for (; ; ) {
-        const { done: a, value: l } = await o.read();
-        if (a) break;
-        for (const h of s.push(n.decode(l, { stream: !0 })))
-          c(h, e);
+        const { done: i, value: l } = await o.read();
+        if (i) break;
+        for (const f of n.push(s.decode(l, { stream: !0 })))
+          d(f, e);
       }
-      for (const a of s.push(n.decode()))
-        c(a, e);
-      for (const a of s.flush())
-        c(a, e);
-    } catch (a) {
-      e.onError(a instanceof Error ? a : new Error(String(a)));
+      for (const i of n.push(s.decode()))
+        d(i, e);
+      for (const i of n.flush())
+        d(i, e);
+    } catch (i) {
+      e.onError(i instanceof Error ? i : new Error(String(i)));
     }
   }
 }
-function c(i, t) {
-  i.kind === "token" ? t.onToken(i.text) : i.kind === "done" && t.onDone(i);
+function d(a, t) {
+  a.kind === "token" ? t.onToken(a.text) : a.kind === "done" && t.onDone(a);
 }
-function p(i = navigator) {
-  return typeof i?.gpu == "object" && i.gpu !== null;
+function p(a = navigator) {
+  return typeof a?.gpu == "object" && a.gpu !== null;
 }
-let d = null;
-async function m(i) {
+let c = null;
+async function g(a) {
   if (!p()) throw new Error("WebGPU unavailable");
-  d || (i?.("loading"), d = (async () => {
+  c || (a?.("loading"), c = (async () => {
     const e = await import(
       /* @vite-ignore */
       "@huggingface/transformers"
@@ -130,22 +130,22 @@ async function m(i) {
       { dtype: "q4", device: "webgpu" }
     );
   })().catch((e) => {
-    throw d = null, e;
+    throw c = null, e;
   }));
   try {
-    await d;
+    await c;
   } catch (e) {
-    throw i?.("error"), e instanceof Error ? e : new Error(String(e));
+    throw a?.("error"), e instanceof Error ? e : new Error(String(e));
   }
-  i?.("ready");
-  const t = await d;
+  a?.("ready");
+  const t = await c;
   return {
     async reply(e) {
       let r = "";
-      const s = await import("@huggingface/transformers"), o = new s.TextStreamer(
+      const n = await import("@huggingface/transformers"), o = new n.TextStreamer(
         t.tokenizer,
-        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (n) => {
-          r += n;
+        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (s) => {
+          r += s;
         } }
       );
       return await t(
@@ -154,7 +154,7 @@ async function m(i) {
       ), r;
     },
     dispose() {
-      d = null;
+      c = null;
     }
   };
 }
@@ -174,7 +174,7 @@ class x extends HTMLElement {
     t === "server-url" && (this.serverUrl = r ?? "");
   }
   ensureClient() {
-    return (!this.client || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.client = new g(this.serverUrl), this.loggedIn = !1), this.client;
+    return (!this.client || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.client = new m(this.serverUrl), this.loggedIn = !1), this.client;
   }
   setStatus(t) {
     this.statusEl && (this.statusEl.textContent = t), this.dispatchEvent(new CustomEvent("af-status", { detail: { status: t }, bubbles: !0, composed: !0 }));
@@ -197,12 +197,12 @@ class x extends HTMLElement {
     try {
       const r = this.ensureClient();
       this.loggedIn || (await r.login(this.password), this.loggedIn = !0);
-      const s = await this.fetchImpl?.(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" }) ?? await fetch(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" });
-      if (!s.ok) {
-        const n = await s.text();
-        throw new Error(`upload ${s.status}: ${n.slice(0, 120)}`);
+      const n = await this.fetchImpl?.(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" }) ?? await fetch(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" });
+      if (!n.ok) {
+        const s = await n.text();
+        throw new Error(`upload ${n.status}: ${s.slice(0, 120)}`);
       }
-      const o = await s.json();
+      const o = await n.json();
       this.setStatus(o.extracted === !1 ? "doc: extraction failed" : "doc ready"), o.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${o.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
     } catch (r) {
       this.renderError(r instanceof Error ? r.message : String(r));
@@ -218,9 +218,9 @@ class x extends HTMLElement {
     };
     if (!this.forceServer && p())
       try {
-        this.local || (this.setStatus("browser-loading"), this.local = await m((o) => this.localStatus = o));
-        const s = await this.local.reply(e);
-        this.setTier("Browser"), this.appendBubble(s, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
+        this.local || (this.setStatus("browser-loading"), this.local = await g((o) => this.localStatus = o));
+        const n = await this.local.reply(e);
+        this.setTier("Browser"), this.appendBubble(n, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
           detail: { conversationId: null, tier: "Browser", citations: [] },
           bubbles: !0,
           composed: !0
@@ -230,22 +230,22 @@ class x extends HTMLElement {
         this.local = null;
       }
     try {
-      const s = this.ensureClient();
-      this.loggedIn || (await s.login(this.password), this.loggedIn = !0);
+      const n = this.ensureClient();
+      this.loggedIn || (await n.login(this.password), this.loggedIn = !0);
       const o = this.appendBubble("", "assistant");
-      this.setStatus("streaming"), await s.sendMessage(e, {
-        onToken: (n) => {
-          o.textContent += n, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: n }, bubbles: !0, composed: !0 }));
+      this.setStatus("streaming"), await n.sendMessage(e, {
+        onToken: (s) => {
+          o.textContent += s, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: s }, bubbles: !0, composed: !0 }));
         },
-        onDone: (n) => {
-          this.setTier(n.tier), this.renderCitations(n.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: n, bubbles: !0, composed: !0 }));
+        onDone: (s) => {
+          this.setTier(s.tier), this.renderCitations(s.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: s, bubbles: !0, composed: !0 }));
         },
-        onError: (n) => {
-          this.renderError(`Error: ${n.message}`);
+        onError: (s) => {
+          this.renderError(`Error: ${s.message}`);
         }
       });
-    } catch (s) {
-      this.renderError(s instanceof Error ? s.message : String(s));
+    } catch (n) {
+      this.renderError(n instanceof Error ? n.message : String(n));
     } finally {
       r();
     }
@@ -255,64 +255,90 @@ class x extends HTMLElement {
     const e = document.createElement("div");
     e.className = "citations";
     for (const r of t) {
-      const s = document.createElement("a");
-      s.href = r.url, s.target = "_blank", s.rel = "noopener noreferrer", s.textContent = r.title, s.title = r.snippet ?? r.title, e.appendChild(s);
+      const n = document.createElement("a");
+      n.href = r.url, n.target = "_blank", n.rel = "noopener noreferrer", n.textContent = r.title, n.title = r.snippet ?? r.title, e.appendChild(n);
     }
     this.transcript?.appendChild(e);
   }
   render() {
     const t = document.createElement("style");
     t.textContent = `
-      :host { display:block; font: 14px/1.5 system-ui, sans-serif; color:#1a1a2e;
-              border:1px solid #e2e2ec; border-radius:12px; overflow:hidden; background:#fff; }
-      .head { display:flex; align-items:center; gap:8px; padding:10px 14px;
-              background:#f6f6fb; border-bottom:1px solid #e2e2ec; }
-      .head strong { font-size:13px; letter-spacing:.02em; }
-      .tier { font-size:11px; padding:2px 8px; border-radius:999px; background:#e8e8f5; color:#555; }
-      .tier[data-tier="Browser"] { background:#e0f5e8; color:#186a3b; }
-      .tier[data-tier="Server"] { background:#e8f0fb; color:#1a4d8f; }
-      .status { margin-left:auto; font-size:11px; color:#888; }
-      .log { height:280px; overflow-y:auto; padding:12px; display:flex;
-             flex-direction:column; gap:8px; background:#fcfcfe; }
-      .bubble { max-width:78%; padding:8px 12px; border-radius:12px; white-space:pre-wrap; }
-      .bubble.user { align-self:flex-end; background:#3b5bdb; color:#fff; border-bottom-right-radius:4px; }
-      .bubble.assistant { align-self:flex-start; background:#eeeef6; border-bottom-left-radius:4px; }
-      .bubble.error { align-self:stretch; background:#fdecec; color:#a02020; max-width:100%; }
-      .citations { align-self:flex-start; display:flex; flex-wrap:wrap; gap:6px; }
-      .citations a { font-size:12px; color:#3b5bdb; text-decoration:none; background:#eef1fd;
-                     padding:3px 8px; border-radius:6px; }
-      form { display:flex; gap:8px; padding:10px; border-top:1px solid #e2e2ec; }
-      input { flex:1; padding:8px 10px; border:1px solid #d8d8e6; border-radius:8px; font:inherit; }
-      button { padding:8px 14px; border:0; border-radius:8px; background:#3b5bdb; color:#fff;
-               font:inherit; cursor:pointer; }
-      button:disabled { opacity:.5; cursor:default; }
+      :host {
+        display: block; font: 0.9375rem/1.55 'Inter', system-ui, sans-serif;
+        color: #E6EDF3; background: #151B23;
+        --af-bg: #0D1117; --af-surface: #151B23; --af-raised: #1C2430; --af-border: #2A3441;
+        --af-text: #E6EDF3; --af-text-2: #9BA8B7; --af-accent: #4C8DFF; --af-accent-btn: #2B67D4;
+        --af-accent-btn-hover: #2E6ADB; --af-success: #3FB950; --af-danger: #F85149;
+        --af-mono: 'JetBrains Mono', ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      .head { display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+              background: var(--af-raised); border-bottom: 1px solid var(--af-border); }
+      .head strong { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; }
+      .tier { font: 500 0.6875rem/1.4 var(--af-mono); letter-spacing: 0.08em;
+              text-transform: uppercase; padding: 3px 10px; border-radius: 999px;
+              background: var(--af-raised); color: var(--af-text-2); border: 1px solid var(--af-border); }
+      .tier[data-tier="Browser"] { background: #0E2A13; color: var(--af-success); border-color: #1B4724; }
+      .tier[data-tier="Server"] { background: #12233F; color: var(--af-accent); border-color: #1F3A63; }
+      .status { margin-left: auto; font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2); }
+      .log { height: 340px; overflow-y: auto; padding: 18px; display: flex;
+             flex-direction: column; gap: 12px; background: var(--af-surface); }
+      .log:empty::after { content: 'Ask anything - answers cite their sources.';
+             color: var(--af-text-2); font-size: 0.875rem; margin: auto; }
+      .bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; }
+      .bubble.user { align-self: flex-end; background: #12325E; border-bottom-right-radius: 4px; }
+      .bubble.assistant { align-self: flex-start; background: var(--af-raised);
+                          border: 1px solid var(--af-border); border-bottom-left-radius: 4px; }
+      .bubble.error { align-self: stretch; background: #3A1214; color: var(--af-danger);
+                      border: 1px solid #5C1E22; max-width: 100%; border-radius: 10px; }
+      .citations { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; }
+      .citations a { font: 500 0.75rem/1.4 var(--af-mono); color: var(--af-accent);
+                     text-decoration: none; background: var(--af-bg);
+                     border: 1px solid var(--af-border); padding: 4px 10px; border-radius: 6px; }
+      .citations a:hover { border-color: var(--af-accent); }
+      form { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--af-border);
+             background: var(--af-raised); }
+      input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid var(--af-border);
+             border-radius: 10px; font: inherit; color: var(--af-text);
+             background: #0B0F14; outline: none; }
+      input[type="text"]:focus { border-color: var(--af-accent); }
+      input[type="text"]::placeholder { color: var(--af-text-2); }
+      button { padding: 10px 16px; border: 0; border-radius: 10px; font: 600 0.875rem/1 inherit;
+               cursor: pointer; transition: background 0.15s ease; }
+      button[type="submit"] { background: var(--af-accent-btn); color: #fff; }
+      button[type="submit"]:hover { background: var(--af-accent-btn-hover); }
+      button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+      button[type="button"] { background: transparent; color: var(--af-text-2);
+              border: 1px solid var(--af-border); font-size: 1rem; padding: 10px 12px; }
+      button[type="button"]:hover { color: var(--af-text); border-color: var(--af-text-2); }
+      @media (max-width: 640px) { .log { height: 280px; } .bubble { max-width: 92%; } }
     `, this.shadowRoot.append(t);
     const e = document.createElement("div");
     e.className = "head";
     const r = document.createElement("strong");
-    r.textContent = "AgentFolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", e.append(r, this.tierBadge, this.statusEl), this.transcript = document.createElement("div"), this.transcript.className = "log";
-    const s = document.createElement("form");
-    this.input = document.createElement("input"), this.input.type = "text", this.input.placeholder = "Ask about the portfolio…";
+    r.textContent = "Portfolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", e.append(r, this.tierBadge, this.statusEl), this.transcript = document.createElement("div"), this.transcript.className = "log";
+    const n = document.createElement("form");
+    this.input = document.createElement("input"), this.input.type = "text", this.input.placeholder = "Ask about this portfolio…", this.input.setAttribute("aria-label", "Message");
     const o = document.createElement("button");
-    o.type = "button", o.textContent = "📎", o.title = "Upload a document (pdf/txt/md/docx) for grounded answers";
-    const n = document.createElement("input");
-    n.type = "file", n.accept = ".pdf,.txt,.md,.docx", n.hidden = !0, o.addEventListener("click", () => n.click()), n.addEventListener("change", () => {
-      const l = n.files?.[0];
-      l && this.upload(l), n.value = "";
+    o.type = "button", o.textContent = "📎", o.title = "Upload a document (pdf/txt/md/docx) for grounded answers", o.setAttribute("aria-label", "Upload document");
+    const s = document.createElement("input");
+    s.type = "file", s.accept = ".pdf,.txt,.md,.docx", s.hidden = !0, o.addEventListener("click", () => s.click()), s.addEventListener("change", () => {
+      const l = s.files?.[0];
+      l && this.upload(l), s.value = "";
     });
-    const a = document.createElement("button");
-    a.type = "submit", a.textContent = "Send", s.append(this.input, o, n, a), s.addEventListener("submit", (l) => {
+    const i = document.createElement("button");
+    i.type = "submit", i.textContent = "Send", n.append(this.input, o, s, i), n.addEventListener("submit", (l) => {
       l.preventDefault(), this.send();
-    }), this.shadowRoot.append(e, this.transcript, s);
+    }), this.shadowRoot.append(e, this.transcript, n);
   }
 }
 customElements.get("agentfolio-chat") || customElements.define("agentfolio-chat", x);
 export {
   x as AgentFolioChatElement,
-  g as AgentFolioClient,
-  f as SseParser,
+  m as AgentFolioClient,
+  h as SseParser,
   p as hasWebGPU,
-  m as loadLocalChat,
+  g as loadLocalChat,
   u as parseFrame,
   b as parsePayload
 };

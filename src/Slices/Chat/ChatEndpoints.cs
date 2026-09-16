@@ -60,13 +60,25 @@ public static class ChatEndpoints
                 string? tid = tidClaim;
                 if (string.IsNullOrEmpty(tid))
                 {
-                    var registry = http.RequestServices.GetService<TenantRegistry>();
-                    tid = registry is null ? null : (await registry.GetBySlugAsync("showcase", ct))?.TenantId;
+                    // Doc context is BEST-EFFORT: a missing/uninitialized registry (e.g. a
+                    // test host without tenancy schema) must never break chat itself.
+                    try
+                    {
+                        var registry = http.RequestServices.GetService<TenantRegistry>();
+                        tid = registry is null ? null : (await registry.GetBySlugAsync("showcase", ct))?.TenantId;
+                    }
+                    catch
+                    {
+                        tid = null;
+                    }
                 }
                 var sid = http.Request.Cookies.TryGetValue("af_sid", out var s) && !string.IsNullOrEmpty(s) ? s : null;
                 if (tid is not null && sid is not null)
                 {
-                    var keys = await objectStore.ListByPrefixAsync($"tenants/{tid}/sessions/{sid}/extracted/", ct);
+                    IReadOnlyList<string> keys;
+                    try { keys = await objectStore.ListByPrefixAsync($"tenants/{tid}/sessions/{sid}/extracted/", ct); }
+                    catch { keys = Array.Empty<string>(); } // best-effort context, never fatal
+
                     if (keys.Count > 0)
                     {
                         var docs = new List<string>();

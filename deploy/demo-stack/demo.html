@@ -118,6 +118,16 @@ const SAMPLE_ENTS = {
 const SAMPLE_RELS = { works_at: "a person is employed by an organization" };
 
 const $ = id => document.getElementById(id);
+function beacon(event, stage, error) {  // client failure → /telemetry → OTel
+  try {
+    navigator.sendBeacon("/telemetry", JSON.stringify({
+      event, stage, error: String(error && error.message || error).slice(0, 400),
+      url: location.pathname,
+    }));
+  } catch (_) {}
+}
+window.addEventListener("error", e => beacon("window_error", "global", e.error || e.message));
+window.addEventListener("unhandledrejection", e => beacon("unhandled_rejection", "global", e.reason));
 $("doc").value = SAMPLE_DOC;
 $("ents").value = JSON.stringify(SAMPLE_ENTS, null, 1);
 $("rels").value = JSON.stringify(SAMPLE_RELS, null, 1);
@@ -240,6 +250,7 @@ async function bootstrap() {
       `relations, ${nSeeds} seed entities in ${((performance.now() - t0) / 1000).toFixed(0)}s. ` +
       `Schema prefilled — paste one of YOUR documents and Extract.`;
   } catch (e) {
+    beacon("bootstrap_failed", "bootstrap", e);
     $("bootstat").innerHTML = `<span class="err">${esc(String(e.message || e))}</span>`;
   } finally { clearInterval(tick); btn.disabled = false; }
 }

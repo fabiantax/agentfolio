@@ -23,7 +23,26 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu torch
 RUN pip install \
     "fastapi==0.115.0" \
     "uvicorn[standard]==0.32.0" \
-    "gliformer==0.1.2"
+    "gliformer==0.1.2" \
+    "opentelemetry-sdk==1.29.0" \
+    "opentelemetry-exporter-otlp-proto-http==1.29.0" \
+    "opentelemetry-instrumentation-fastapi==0.50b0"
+
+# Self-host the browser JS stack (v0.1.8): transformers.js ESM bundle +
+# the exact pinned onnxruntime-web wasm assets, served from /assets —
+# ZERO external CDN deps (iOS content blockers killed the jsdelivr import;
+# "Load failed" on iPhone, no server request ever arrived).
+RUN ORT=onnxruntime-web@1.22.0-dev.20250409-89f8206ba4 && \
+    mkdir -p /assets/ort && \
+    curl -fsSL --retry 3 -o /assets/transformers.min.mjs \
+      "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5/dist/transformers.min.mjs" && \
+    curl -s "https://data.jsdelivr.com/v1/package/npm/$ORT/flat" \
+      | python3 -c "import json,sys; [print(f['name']) for f in json.load(sys.stdin)['files'] if f['name'].startswith('/dist/') and (f['name'].endswith('.wasm') or '.mjs' in f['name']) and 'bundle' not in f['name']]" \
+      > /tmp/ort-files.txt && \
+    wc -l /tmp/ort-files.txt && \
+    while read -r f; do curl -fsSL --retry 3 -o "/assets/ort/$(basename $f)" \
+      "https://cdn.jsdelivr.net/npm/$ORT$f"; done < /tmp/ort-files.txt && \
+    ls -la /assets/ort/ | head -20
 
 # Bake the checkpoint (offline-capable container).
 RUN HF_HUB_DOWNLOAD_TIMEOUT=120 python -c "from huggingface_hub import snapshot_download; \
@@ -47,6 +66,7 @@ RUN M=/models/hf/onnx-community/LFM2.5-350M-ONNX/resolve/main && \
     done && ls -la onnx/
 
 WORKDIR /app
+COPY otel_setup.py /app/otel_setup.py
 COPY gliformer_main.py /app/gliformer_main.py
 COPY demo.html /app/demo.html
 COPY local-chat.html /app/local-chat.html

@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 
 import urllib.request
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -60,6 +60,10 @@ MAX_DOC_CHARS = 50000
 
 app = FastAPI(title="veld-extractors-gliformer")
 
+import otel_setup  # noqa: E402  (local module, after app creation)
+
+otel_setup.init_otel(app)
+
 _model = None
 _lock = threading.Lock()
 
@@ -72,8 +76,15 @@ def _load_model():
             if _model is None:
                 from gliformer import GLiFormer
 
-                m = GLiFormer.from_pretrained(MODEL_ID, load_tokenizer=True)
-                _model = m.to(DEVICE).eval()
+                with otel_setup.tracer().start_as_current_span(
+                    "gliformer.model_load"
+                ) as span:
+                    span.set_attribute("model", MODEL_ID)
+                    span.set_attribute("device", DEVICE)
+                    t0 = time.perf_counter()
+                    m = GLiFormer.from_pretrained(MODEL_ID, load_tokenizer=True)
+                    _model = m.to(DEVICE).eval()
+                    span.set_attribute("load_ms", int((time.perf_counter() - t0) * 1000))
     return _model
 
 
@@ -586,23 +597,66 @@ def schema_bootstrap(req: BootstrapRequest):
 # zero HuggingFace round-trips, no CORS preflights.
 
 _MODELS_DIR = os.environ.get("GLIFORMER_MODELS_DIR", "/models/hf")
+_ASSETS_DIR = os.environ.get("GLIFORMER_ASSETS_DIR", "/assets")
 
 
 @app.middleware("http")
 async def _immutable_model_cache(request, call_next):
     resp = await call_next(request)
-    if request.url.path.startswith("/models/"):
+    if request.url.path.startswith(("/models/", "/assets/")):
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         resp.headers["Access-Control-Allow-Origin"] = "*"
     return resp
 
 
+def _serve_static(base_env: str, rest: str) -> FileResponse:
+    base = os.environ.get(base_env, _MODELS_DIR if "MODELS" in base_env else _ASSETS_DIR)
+    path = os.path.realpath(os.path.join(base, rest))
+    if not path.startswith(os.path.realpath(base)) or not os.path.isfile(path):
+        raise HTTPException(404, f"no such file: {rest}")
+    return FileResponse(path)
+
+
 @app.api_route("/models/{rest:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def model_file(rest: str) -> FileResponse:
-    path = os.path.realpath(os.path.join(_MODELS_DIR, rest))
-    if not path.startswith(os.path.realpath(_MODELS_DIR)) or not os.path.isfile(path):
-        raise HTTPException(404, f"no such model file: {rest}")
-    return FileResponse(path)
+    span = otel_setup.tracer().start_as_current_span("gliformer.model_file")
+    try:
+        path = os.path.realpath(os.path.join(_MODELS_DIR, rest))
+        if os.path.isfile(path):
+            span.set_attribute("bytes", os.path.getsize(path))
+        span.set_attribute("file", rest[-80:])
+        return _serve_static("GLIFORMER_MODELS_DIR", rest)
+    finally:
+        span.end()
+
+
+@app.api_route("/assets/{rest:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def asset_file(rest: str) -> FileResponse:
+    return _serve_static("GLIFORMER_ASSETS_DIR", rest)
+
+
+class ClientTelemetry(BaseModel):
+    event: str                      # e.g. load_failed, gen_failed, extract_failed
+    backend: Optional[str] = None   # webgpu | wasm | null
+    stage: Optional[str] = None     # import | probe | fetch | session | generate
+    error: Optional[str] = None
+    url: Optional[str] = None
+    model: Optional[str] = None
+
+
+@app.post("/telemetry")
+def telemetry(req: ClientTelemetry, request: "Request") -> dict:
+    """Client-side failure beacon → OTel span (device breakage becomes
+    queryable: iOS content blockers, OOM aborts, offline imports)."""
+    otel_setup.client_event(
+        req.event,
+        {
+            "backend": req.backend, "stage": req.stage, "error": req.error,
+            "url": req.url, "model": req.model,
+            "ua": request.headers.get("user-agent", ""),
+        },
+    )
+    return {"ok": True}
 
 
 @app.post("/ner", response_model=NerResponse)
@@ -735,6 +789,15 @@ def extract(req: ExtractRequest) -> ExtractResponse:
         rels_out.setdefault(r["relation"], []).append(r)
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
+    span = otel_setup.tracer().start_as_current_span("gliformer.extract")
+    span.set_attribute("doc_chars", len(req.text))
+    span.set_attribute("chunks", len(chunks))
+    span.set_attribute("propagated", propagated)
+    span.set_attribute("seeded", bool(req.seed_entities))
+    span.set_attribute("n_entities", len(ent_best))
+    span.set_attribute("n_relations", len(rel_best))
+    span.set_attribute("elapsed_ms", elapsed_ms)
+    span.end()
     return ExtractResponse(
         entities=ents_out,
         relations=rels_out,
