@@ -65,8 +65,21 @@ footer a { color: var(--af-accent); text-decoration: none; }
     {
         app.MapGet("/share/{slug}", async (HttpContext http, string slug, TenantRegistry registry, TenantShardRegistry shards, CancellationToken ct) =>
         {
-            var tenant = await ResolveTenantAsync(registry, slug, ct);
-            if (tenant is null) return Results.NotFound();
+            TenantRecord? tenant;
+            try
+            {
+                tenant = await ResolveTenantAsync(registry, slug, ct);
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+            {
+                // Registry store failure (locked, corrupt, unreadable): fail loud with a
+                // NAMED dependency error — never an unhandled 500 stack trace (#45).
+                return Results.Json(new { error = "tenancy_store_unavailable", detail = ex.GetType().Name }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            if (tenant is null)
+                return slug == "showcase"
+                    ? Results.Json(new { error = "showcase_not_seeded" }, statusCode: StatusCodes.Status503ServiceUnavailable)
+                    : Results.NotFound();
 
             var pwHash = await registry.GetSharePasswordHashAsync(tenant.TenantId, ct);
             if (pwHash is not null)
@@ -85,8 +98,19 @@ footer a { color: var(--af-accent); text-decoration: none; }
 
         app.MapPost("/share/{slug}/unlock", async (HttpContext http, string slug, TenantRegistry registry, TenantShardRegistry shards, CancellationToken ct) =>
         {
-            var tenant = await ResolveTenantAsync(registry, slug, ct);
-            if (tenant is null) return Results.NotFound();
+            TenantRecord? tenant;
+            try
+            {
+                tenant = await ResolveTenantAsync(registry, slug, ct);
+            }
+            catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+            {
+                return Results.Json(new { error = "tenancy_store_unavailable", detail = ex.GetType().Name }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            if (tenant is null)
+                return slug == "showcase"
+                    ? Results.Json(new { error = "showcase_not_seeded" }, statusCode: StatusCodes.Status503ServiceUnavailable)
+                    : Results.NotFound();
 
             var pwHash = await registry.GetSharePasswordHashAsync(tenant.TenantId, ct);
             var form = await http.Request.ReadFormAsync(ct);
