@@ -1,0 +1,53 @@
+{
+  "id": "v1",
+  "created": "2026-09-16",
+  "sources": [
+    {
+      "id": "csharp14",
+      "title": "What's new in C# 14 (Microsoft Learn)",
+      "url": "https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-14",
+      "text": "C# 14 includes the following new features. You can try these features using the latest Visual Studio 2026 version or the .NET 10 SDK: Extension members, Null-conditional assignment, nameof supports unbound generic types, More implicit conversions for Span and ReadOnlySpan, Modifiers on simple lambda parameters, field backed properties, partial events and constructors, user-defined compound assignment operators, new preprocessor directives for File-based apps. C# 14 is the latest C# release. C# 14 is supported on .NET 10. Extension members: C# 14 adds new syntax to define extension members. The new syntax enables you to declare extension properties in addition to extension methods. You can also declare extension members that extend the type, rather than an instance of the type. In other words, these new extension members can appear as static members of the type you extend. These extensions can include user defined operators implemented as static extension methods. An example is an IsEmpty extension property for IEnumerable<TSource>."
+    },
+    {
+      "id": "sqlite-vec",
+      "title": "asg017/sqlite-vec (GitHub README)",
+      "url": "https://github.com/asg017/sqlite-vec",
+      "text": "sqlite-vec: A vector search SQLite extension that runs anywhere! An extremely small, fast enough vector search SQLite extension that runs anywhere SQLite runs. A successor to sqlite-vss. sqlite-vec is a pre-v1, so expect breaking changes. Features: Store and query float, int8, and binary vectors in vec0 virtual tables. Written in pure C, no dependencies, runs anywhere SQLite runs (Linux/MacOS/Windows, in the browser with WASM, Raspberry Pis, etc). Store non-vector data in metadata, auxiliary, or partition key columns. sqlite-vec is a Mozilla Builders project, with additional sponsorship from Fly.io, Turso, SQLite Cloud, and Shinkai. Installation: Python pip install sqlite-vec, Node.js npm install sqlite-vec, Ruby gem install sqlite-vec, Go go get github.com/asg017/sqlite-vec/bindings/go."
+    },
+    {
+      "id": "dotnet10",
+      "title": "Announcing .NET 10 (.NET Blog, 2025-11-11)",
+      "url": "https://devblogs.microsoft.com/dotnet/announcing-dotnet-10/",
+      "text": "Today, we are excited to announce the launch of .NET 10, the most productive, modern, secure, intelligent, and performant release of .NET yet. .NET 10 is a Long Term Support (LTS) release and will be supported for three years until November 10, 2028. Key improvements: JIT compiler enhancements with better inlining, method devirtualization, and improved code generation for struct arguments. Hardware acceleration: AVX10.2 support for cutting-edge Intel silicon, Arm64 SVE for advanced vectorization, with Arm64 write-barrier improvements reducing GC pause times by 8-20%. NativeAOT improvements: smaller, faster ahead-of-time compiled apps. C# 14 and F# 10 deliver powerful language improvements: field-backed properties simplify property declarations by eliminating the need for explicit backing fields. The .NET ecosystem continues to flourish with over 478,000 packages on NuGet that have been downloaded over 800 billion times."
+    },
+    {
+      "id": "maf10",
+      "title": "Microsoft Agent Framework Version 1.0 (devblogs, 2026-04-03)",
+      "url": "https://devblogs.microsoft.com/agent-framework/microsoft-agent-framework-version-1-0/",
+      "text": "Microsoft Agent Framework has reached version 1.0 for both .NET and Python. This is the production-ready release: stable APIs, and a commitment to long-term support. Agent Framework 1.0 gives you enterprise-grade multi-agent orchestration, multi-provider model support, and cross-runtime interoperability via A2A and MCP. We set out to unify the enterprise-ready foundations of Semantic Kernel with the innovative orchestrations of AutoGen into a single open-source SDK. What is in version 1.0: Single Agent and Service Connectors with first-party connectors for Microsoft Foundry, Azure OpenAI, OpenAI, Anthropic Claude, Amazon Bedrock, Google Gemini and Ollama. Agent Memory and Context Providers: pluggable memory architecture supporting conversational history, persistent key-value state, and vector-based retrieval, with backends Memory in Foundry Agent Service, Mem0, Redis, Neo4j or a custom store. Agent Workflows: the graph-based workflow engine is now stable, with checkpointing and hydration so long-running processes survive interruptions. Multi-Agent Orchestration: stable support for sequential, concurrent, handoff, group chat, and Magentic-One patterns. All patterns support streaming, checkpointing, human-in-the-loop approvals, and pause/resume."
+    }
+  ],
+  "distractorEntities": ["Java", "Python 2", "PostgreSQL", "LangChain", "LlamaIndex", "ONNX Runtime", "Xamarin", "Entity Framework 6", "Blazor WebAssembly", "gRPC"],
+  "questions": [
+    { "id": "q01", "sourceId": "csharp14", "question": "Which C# 14 feature lets you declare extension properties, and which SDK do you need to try C# 14 features?", "goldEntities": ["Extension members", ".NET 10"] },
+    { "id": "q02", "sourceId": "csharp14", "question": "Can extension members in C# 14 appear as static members of the extended type?", "goldEntities": ["static extension"] },
+    { "id": "q03", "sourceId": "csharp14", "question": "Which C# 14 feature simplifies property declarations by eliminating explicit backing fields?", "goldEntities": ["field backed properties"] },
+    { "id": "q04", "sourceId": "sqlite-vec", "question": "In which language is sqlite-vec written, and what are its dependency requirements?", "goldEntities": ["pure C", "no dependencies"] },
+    { "id": "q05", "sourceId": "sqlite-vec", "question": "Which virtual tables does sqlite-vec use to store and query vectors, and which vector types does it support?", "goldEntities": ["vec0", "float", "int8", "binary"] },
+    { "id": "q06", "sourceId": "sqlite-vec", "question": "Which project was sqlite-vec a successor to, and which organization's Builders program sponsors it?", "goldEntities": ["sqlite-vss", "Mozilla"] },
+    { "id": "q07", "sourceId": "dotnet10", "question": "Until what date is .NET 10 supported, and what kind of support release is it?", "goldEntities": ["November 10, 2028", "Long Term Support"] },
+    { "id": "q08", "sourceId": "dotnet10", "question": "By what percentage range do Arm64 write-barrier improvements reduce GC pause times in .NET 10?", "goldEntities": ["8-20%"] },
+    { "id": "q09", "sourceId": "dotnet10", "question": "How many NuGet packages does the .NET ecosystem have according to the .NET 10 announcement?", "goldEntities": ["478,000"] },
+    { "id": "q10", "sourceId": "maf10", "question": "Which two earlier frameworks does Microsoft Agent Framework unify?", "goldEntities": ["Semantic Kernel", "AutoGen"] },
+    { "id": "q11", "sourceId": "maf10", "question": "Name the five stable multi-agent orchestration patterns in Agent Framework 1.0.", "goldEntities": ["sequential", "concurrent", "handoff", "group chat", "Magentic-One"] },
+    { "id": "q12", "sourceId": "maf10", "question": "Which memory backends can Agent Framework's pluggable memory architecture use?", "goldEntities": ["Mem0", "Redis", "Neo4j"] },
+    { "id": "q13", "sourceId": "maf10", "question": "Which protocols give Agent Framework cross-runtime interoperability?", "goldEntities": ["A2A", "MCP"] },
+    { "id": "q14", "sourceId": "csharp14", "question": "What does the new nameof support in C# 14 allow that was not possible before?", "goldEntities": ["unbound generic"] },
+    { "id": "q15", "sourceId": "dotnet10", "question": "Which Intel silicon instruction set does .NET 10 add hardware acceleration for?", "goldEntities": ["AVX10.2"] },
+    { "id": "q16", "sourceId": "sqlite-vec", "question": "How do you install sqlite-vec in a Node.js project?", "goldEntities": ["npm install sqlite-vec"] },
+    { "id": "q17", "sourceId": "maf10", "question": "What ensures long-running Agent Framework workflows survive interruptions?", "goldEntities": ["Checkpointing", "hydration"] },
+    { "id": "q18", "sourceId": "dotnet10", "question": "Which .NET 10 improvement produces smaller, faster ahead-of-time compiled apps?", "goldEntities": ["NativeAOT"] },
+    { "id": "q19", "sourceId": "csharp14", "question": "Which span types get more implicit conversions in C# 14?", "goldEntities": ["Span", "ReadOnlySpan"] },
+    { "id": "q20", "sourceId": "maf10", "question": "Name three first-party model service connectors shipped with Agent Framework 1.0.", "goldEntities": ["Azure OpenAI", "Anthropic Claude", "Amazon Bedrock", "Google Gemini", "Ollama"] }
+  ]
+}

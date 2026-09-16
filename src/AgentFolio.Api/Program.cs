@@ -4,6 +4,11 @@ using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using OpenTelemetry.Exporter;
+using OpenTelemetry.Exporter.OpenTelemetryProtocol;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Slices.Auth2;
 using Slices.Chat;
 using Slices.Uploads;
@@ -11,6 +16,7 @@ using AgentFolio.Platform.Storage;
 using Slices.Tenancy;
 using Slices.Share;
 using AgentFolio.Platform.Migrations;
+using Microsoft.AspNetCore.HttpLogging;
 
 var builder = WebApplication.CreateBuilder(args);
 // Fail-fast DI: validate the whole graph at build (dev/test). Bad registrations
@@ -63,6 +69,40 @@ builder.Services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
 builder.Services.AddAuthorization();
 builder.Services.AddHttpClient();
 
+// Auto request logging (constitution §4-safe: no bodies — keeps SSE streaming
+// unbuffered and cookies/auth headers out of logs; OTel spans carry the rest).
+builder.Services.AddHttpLogging(o => o.LoggingFields =
+    HttpLoggingFields.RequestMethod
+    | HttpLoggingFields.RequestPath
+    | HttpLoggingFields.ResponseStatusCode
+    | HttpLoggingFields.Duration);
+
+// Observability (OTel): traces + metrics + runtime + structured logs -> OTLP collector.
+// OTLP_ENDPOINT e.g. http://strix:4318 (http/protobuf). Unset => loud stderr warning,
+// SDK off (AGENTS.md rule 1: no silent anything — including silent observability).
+var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? Environment.GetEnvironmentVariable("OTLP_ENDPOINT");
+if (!string.IsNullOrEmpty(otlpEndpoint))
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r.AddService("agentfolio"))
+        .WithMetrics(m => m
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddMeter("AgentFolio")
+            .AddOtlpExporter())
+        .WithTracing(t => t
+            .AddAspNetCoreInstrumentation(o => o.RecordException = true)
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter());
+    builder.Logging.AddOpenTelemetry(o => o.IncludeScopes = true);
+}
+else
+{
+    Console.Error.WriteLine("WARNING: OTEL_EXPORTER_OTLP_ENDPOINT unset — OpenTelemetry DISABLED (no traces/metrics/logs export).");
+}
+
 // Tenancy (spec 002 s1-01): global registry + per-tenant shard LRU.
 builder.Services.AddSingleton(_ =>
     new TenantRegistry(Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB")
@@ -101,6 +141,7 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 
 // No indexing of any AgentFolio response.
+app.UseHttpLogging();
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";

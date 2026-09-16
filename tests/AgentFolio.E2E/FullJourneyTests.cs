@@ -29,19 +29,30 @@ public class FullJourneyTests : IDisposable
     private static readonly Lazy<string> SandboxExtractorPath = new(() =>
     {
         // Same recipe as SandboxTests: Release-build the sandbox extractor once.
-        var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
-        var project = Path.GetFullPath(Path.Combine(root, "src", "AgentFolio.Sandbox", "AgentFolio.Sandbox.Extractor", "AgentFolio.Sandbox.Extractor.csproj"));
-        var psi = new System.Diagnostics.ProcessStartInfo
+        // Cross-process mutex: UnitTests and E2E build the SAME project to the same
+        // bin/Release path concurrently in CI (measured run 29191 — GenerateDepsFile
+        // IOException). Serialize; the second build is an incremental no-op.
+        using var gate = new Mutex(initiallyOwned: false, name: "AgentFolio.ExtractorBuildLock");
+        gate.WaitOne();
+        string dll;
+        try
         {
-            FileName = "dotnet",
-            Arguments = $"build \"{project}\" -c Release -v q --nologo",
-            RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
-        };
-        using var proc = System.Diagnostics.Process.Start(psi)!;
-        var buildOut = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-        if (proc.ExitCode != 0) throw new InvalidOperationException($"extractor build failed: {buildOut}");
-        return Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", "AgentFolio.Sandbox.Extractor.dll");
+            var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+            var project = Path.GetFullPath(Path.Combine(root, "src", "AgentFolio.Sandbox", "AgentFolio.Sandbox.Extractor", "AgentFolio.Sandbox.Extractor.csproj"));
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"build \"{project}\" -c Release -v q --nologo",
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi)!;
+            var buildOut = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+            proc.WaitForExit();
+            if (proc.ExitCode != 0) throw new InvalidOperationException($"extractor build failed: {buildOut}");
+            dll = Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", "AgentFolio.Sandbox.Extractor.dll");
+        }
+        finally { gate.ReleaseMutex(); }
+        return dll;
     });
 
     private void BuildApp()

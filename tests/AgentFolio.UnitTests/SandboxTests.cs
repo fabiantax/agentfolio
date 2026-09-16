@@ -27,18 +27,28 @@ public sealed class SandboxTests : IDisposable
     {
         var repoRoot = FindRepoRoot();
         var project = Path.Combine(repoRoot, "src", "AgentFolio.Sandbox", "AgentFolio.Sandbox.Extractor", "AgentFolio.Sandbox.Extractor.csproj");
-        var psi = new ProcessStartInfo
+        // CI race (measured, run 29191): UnitTests and E2E run as parallel processes and
+        // BOTH lazily build this project to the same bin/Release path — concurrent
+        // GenerateDepsFile writes collide (IOException, 8 test failures). A machine-wide
+        // named mutex serializes the builds; the second one is an incremental no-op.
+        using var gate = new Mutex(initiallyOwned: false, name: "AgentFolio.ExtractorBuildLock");
+        gate.WaitOne();
+        try
         {
-            FileName = "dotnet",
-            Arguments = $"build \"{project}\" -c Release -v q --nologo",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        using var proc = Process.Start(psi) ?? throw new InvalidOperationException("dotnet build failed to start");
-        var output = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
-        Assert.True(proc.ExitCode == 0, $"extractor build failed: {output}");
+            var psi = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"build \"{project}\" -c Release -v q --nologo",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var proc = Process.Start(psi) ?? throw new InvalidOperationException("dotnet build failed to start");
+            var output = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+            proc.WaitForExit();
+            Assert.True(proc.ExitCode == 0, $"extractor build failed: {output}");
+        }
+        finally { gate.ReleaseMutex(); }
         return Path.Combine(Path.GetDirectoryName(project)!, "bin", "Release", "net10.0", "AgentFolio.Sandbox.Extractor.dll");
     }
 
