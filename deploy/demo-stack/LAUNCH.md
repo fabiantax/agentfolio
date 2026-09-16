@@ -119,6 +119,9 @@ Snapshot + Gitea registry image persist. Next demo = §D only.
 
 ## Honest sizing + CV claims
 
+> Quality-improvement research (official docs + our measured history +
+> config pre-fill design): see `QUALITY-LEVERS.md` in this directory.
+
 - gliformer-base on CPU: NER 94 ms, joint relations 64 ms (strix,
   2026-09-15, single text) — quote as "sub-150 ms CPU inference".
 - **A/B context** (gliformer-service/VERDICT.md, same-day measured):

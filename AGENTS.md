@@ -31,15 +31,12 @@ constitution in `.specify/memory/constitution.md` (read both before feature work
    (NEVER `container:` — no docker socket; `strix-main` has no live daemon).
    Coverage is collected and reported, never gated on the metric step.
 
-## Known fallback debt (rule 1 hit-list — convert to fail-loudly)
+## Fallback debt — CLEARED (2026-09-16)
 
-- `ChatEndpoints`: keyed `nim` client falls back to an inline ECHO client when NIM
-  env is unset. The E2E journey once passed against this echo — the exact fake-success
-  this rule exists to kill. Fix: 503 `nim_not_configured` when env unset in production;
-  the echo shape stays ONLY inside test DI overrides.
-- `Program.cs` uploads: `IObjectStore` falls back to `InMemoryObjectStore` when S3 env
-  unset. Fine for local dev with a loud startup warning; must be 503/refuse-writes in
-  production mode (data would evaporate on restart — silently violating disposal promises).
+- `ChatEndpoints`: echo fallback DELETED. NIM unset → 503 `nim_not_configured`
+  (fakes live only in test keyed-DI overrides).
+- `Program.cs` uploads: InMemoryObjectStore allowed ONLY in Development/Test with a
+  loud stderr warning; Production throws at startup when S3 env is missing.
 
 ## Layout
 

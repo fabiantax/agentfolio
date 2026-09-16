@@ -67,9 +67,17 @@ if (Environment.GetEnvironmentVariable(S3ObjectStore.EndpointEnvVar) is string)
 {
     builder.Services.AddSingleton<IObjectStore, S3ObjectStore>();
 }
+else if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test"))
+{
+    // Dev/Test ONLY (AGENTS.md rule 1): ephemeral store, loud warning. In Production we
+    // never silently accept uploads that evaporate on restart — S3 env is required.
+    Console.Error.WriteLine("WARNING: AGENTFOLIO_S3_ENDPOINT unset — using in-memory object store (DEV/TEST ONLY; uploads do not survive restart).");
+    builder.Services.AddSingleton<IObjectStore, InMemoryObjectStore>();
+}
 else
 {
-    builder.Services.AddSingleton<IObjectStore, InMemoryObjectStore>();
+    throw new InvalidOperationException(
+        "AGENTFOLIO_S3_ENDPOINT (and bucket/keys) must be set in Production — no silent in-memory fallback (AGENTS.md rule 1).");
 }
 builder.Services.AddSingleton<UploadService>();
 builder.Services.AddSingleton<ExtractionService>();

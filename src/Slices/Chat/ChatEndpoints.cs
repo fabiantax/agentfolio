@@ -21,7 +21,16 @@ public static class ChatEndpoints
         app.MapPost("/chat", async (HttpContext http, ChatRequest request, IServiceProvider sp, CancellationToken ct) =>
         {
             var conversationId = request.ConversationId ?? Guid.NewGuid().ToString();
-            var client = ResolveChatClient(sp);
+            IChatClient client;
+            try
+            {
+                client = ResolveChatClient(sp);
+            }
+            catch (InvalidOperationException)
+            {
+                // AGENTS.md rule 1: no silent fallback — name the missing dependency.
+                return Results.Json(new { error = "nim_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
             var agent = PortfolioAgentFactory.Create(client);
             // Retrieval is not wired yet; server-side turns are retrievalRequired until it lands.
             var tier = ChatTierSelector.Select(new ClientCapabilities(WebGPU: false), retrievalRequired: true).ToString();
@@ -60,6 +69,8 @@ public static class ChatEndpoints
                     await store.StoreChatMessageAsync(conversationId, "assistant", assistantText.ToString(), ct);
             }
             catch { }
+
+            return Results.Empty;
         })
         .RequireAuthorization();
 
@@ -67,20 +78,12 @@ public static class ChatEndpoints
     }
 
     /// <summary>
-    /// Keyed 'nim' client from DI; falls back to an inline echo client when NIM env is
-    /// unset so the API runs (and tests run) keyless.
+    /// Keyed 'nim' client from DI. NO FALLBACK (AGENTS.md rule 1): when NIM is not
+    /// configured the dependency fails loudly — chat returns 503 nim_not_configured,
+    /// never an echo. Tests inject their fake via keyed DI override.
     /// </summary>
     internal static IChatClient ResolveChatClient(IServiceProvider sp)
-    {
-        try
-        {
-            return sp.GetRequiredKeyedService<IChatClient>(NimChatClientFactory.ClientName);
-        }
-        catch (Exception)
-        {
-            return new InlineDelegateChatClient();
-        }
-    }
+        => sp.GetRequiredKeyedService<IChatClient>(NimChatClientFactory.ClientName);
 
     private static async Task WriteSseAsync(HttpResponse response, string payload, CancellationToken ct)
     {
@@ -88,29 +91,4 @@ public static class ChatEndpoints
         await response.Body.FlushAsync(ct);
     }
 
-    /// <summary>FakeChatClient-equivalent: streams the completion in two chunks, keyless fallback.</summary>
-    internal sealed class InlineDelegateChatClient : IChatClient
-    {
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-        {
-            var text = string.Join(" ", messages.SelectMany(m => m.Contents).OfType<TextContent>().Select(c => c.Text));
-            return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, $"[echo] {text}")));
-        }
-
-        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            foreach (var chunk in new[] { "[echo] ", "hello" })
-            {
-                await Task.Yield();
-                yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
-            }
-        }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-
-        public void Dispose() { }
-    }
 }
