@@ -189,7 +189,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
       <h1>{{enc}}</h1>
       <p class="sub">Ask about GitHub stars, saved posts, and uploaded documents — every answer cites its source.</p>
       <div class="meta">
-        {DataChips(hasData ? "yes" : null)}
+        {{DataChips(hasData ? "yes" : null)}}
       </div>
     </header>
     <section class="card">
@@ -198,15 +198,15 @@ footer a { color: var(--af-accent); text-decoration: none; }
     <aside class="evidence">
       <div class="ev-title">VERIFY THIS DEMO</div>
       <ul>
-        <li><a href="{RepoUrl}" rel="noopener noreferrer">Source &amp; history</a> — every commit, PR and review that built this page</li>
-        <li><a href="{RepoUrl}/actions">CI pipeline</a> — build 0-warnings, 94 unit + 2 E2E + 19 web tests, coverage line 72.8% / branch 65.2%</li>
+        <li><a href="{{RepoUrl}}" rel="noopener noreferrer">Source &amp; history</a> — every commit, PR and review that built this page</li>
+        <li><a href="{{RepoUrl}}/actions">CI pipeline</a> — build 0-warnings, 94 unit + 2 E2E + 19 web tests, coverage line 72.8% / branch 65.2%</li>
         <li>Architecture — .NET 10 vertical slices, CQRS-lite + event-log sourcing, Atlas graph-enforced boundaries, sandboxed doc extraction</li>
         <li>Deploy — Aspire orchestration, Helm/k8s target, self-hosted Git+CI on Tailscale</li>
       </ul>
     </aside>
     <footer>Built with .NET 10 · Microsoft Agent Framework · SQLite vec/FTS · <a href="/share/showcase">AgentFolio</a></footer>
   </main>
-  <script type="module" src="{{{ChatScriptPlaceholderSrc}}}"></script>
+  <script type="module" src="{{ChatScriptPlaceholderSrc}}"></script>
 </body>
 </html>
 """;
