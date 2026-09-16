@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Slices.Chat;
 using Slices.Tenancy;
+using Slices.Uploads;
+using AgentFolio.Platform.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,19 @@ builder.Services.AddSingleton(_ =>
                 .Replace("agentfolio.db", "agentfolio-global.db"))));
 builder.Services.AddSingleton(sp => new TenantShardRegistry(
     sp.GetRequiredService<TenantRegistry>().GlobalDbPath));
+
+// Uploads (spec 002 s3-03): bucket store (S3 when configured — constructor throws
+// without AGENTFOLIO_S3_ENDPOINT; InMemoryObjectStore for local dev) + gated pipeline.
+if (Environment.GetEnvironmentVariable(S3ObjectStore.EndpointEnvVar) is string)
+{
+    builder.Services.AddSingleton<IObjectStore, S3ObjectStore>();
+}
+else
+{
+    builder.Services.AddSingleton<IObjectStore, InMemoryObjectStore>();
+}
+builder.Services.AddSingleton<UploadService>();
+builder.Services.AddHostedService<UploadExpiryEnforcer>();
 
 var app = builder.Build();
 
@@ -107,6 +122,7 @@ app.MapGet("/weatherforecast", () =>
 
 app.MapChatApi();
 app.MapTenancyApi();
+app.MapUploadsApi();
 
 app.Run();
 

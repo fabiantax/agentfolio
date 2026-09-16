@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Slices\Skills\Slices.Skills.csproj" />
     <ProjectReference Include="..\..\src\Slices\Chat\Slices.Chat.csproj" />
     <ProjectReference Include="..\..\src\Slices\Tenancy\Slices.Tenancy.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
   </ItemGroup>
 
   <ItemGroup>
