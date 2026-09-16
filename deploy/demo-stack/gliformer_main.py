@@ -26,11 +26,16 @@ Env:
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
+import socket
 import threading
 import time
 from typing import Optional
+from urllib.parse import urlparse
+
+import urllib.request
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -256,7 +261,131 @@ def _merge_chunk(
     return propagated
 
 
+# --- domain bootstrap (known-context schema from a website) -----------------
+# User gives a domain/URL → we fetch the site, run a GENERIC probe-label NER
+# pass over its text, and return: (a) the probe labels that actually FIRE on
+# this domain (dropping dead labels cuts label noise), each enriched with
+# real example strings from THEIR site (GLiNER-family labels are free text —
+# examples in the label string sharpen conditioning), (b) seed entity strings
+# for the progressive-context gazetteer, (c) relation suggestions from the
+# fired label pairs. This is the QUALITY-LEVERS.md "config pre-fill" design,
+# driven by the client's own website instead of a hand-written config.
+
+PROBE_LABELS = [
+    "product", "service", "organization", "person", "location",
+    "technology", "process", "role", "event", "document",
+]
+
+_RELATION_TEMPLATES = {
+    frozenset({"organization", "product"}): ("offers", "an organization offers a product"),
+    frozenset({"organization", "service"}): ("provides", "an organization provides a service"),
+    frozenset({"person", "organization"}): ("works_at", "a person is employed by an organization"),
+    frozenset({"person", "role"}): ("has_role", "a person holds a role"),
+    frozenset({"organization", "technology"}): ("uses", "an organization uses a technology"),
+    frozenset({"process", "technology"}): ("uses", "a process uses a technology"),
+    frozenset({"location", "organization"}): ("located_in", "an organization is located in a place"),
+    frozenset({"event", "organization"}): ("hosts", "an organization hosts an event"),
+}
+
+_FETCH_LIMIT = 500_000  # bytes
+_FETCH_TIMEOUT = 8
+
+
+def _fetch_site(domain_or_url: str) -> tuple[str, str, str]:
+    """Fetch a website's visible text. Returns (url, title, text).
+    http/https only, private/loopback targets rejected (SSRF guard)."""
+    raw = domain_or_url.strip()
+    if not urlparse(raw).scheme:
+        raw = "https://" + raw
+    p = urlparse(raw)
+    if p.scheme not in ("http", "https") or not p.hostname:
+        raise HTTPException(400, f"unsupported URL: {domain_or_url!r}")
+    try:
+        infos = socket.getaddrinfo(p.hostname, None)
+    except OSError as e:
+        raise HTTPException(400, f"cannot resolve {p.hostname}: {e}")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise HTTPException(400, "refusing to fetch private/loopback targets")
+    req = urllib.request.Request(
+        raw, headers={"User-Agent": "AgentFolio-demo-stack/0.1.6 (+extraction bootstrap)"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
+            html = r.read(_FETCH_LIMIT).decode("utf-8", errors="replace")
+            final_url = r.geturl()
+    except Exception as e:
+        raise HTTPException(502, f"fetch failed for {raw}: {e}")
+    title_m = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    title = (title_m.group(1).strip() if title_m else p.hostname)[:120]
+    # strip scripts/styles/tags — visible text only
+    text = re.sub(r"(?is)<(script|style|noscript|svg|header|footer|nav)[^>]*>.*?</\1>", " ", html)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", re.sub(r"&[a-z#0-9]+;", " ", text)).strip()
+    return final_url, title, text
+
+
+def _bootstrap_schema(url: str) -> dict:
+    final_url, title, text = _fetch_site(url)
+    if len(text) < 200:
+        raise HTTPException(
+            422, f"site text too thin ({len(text)} chars) to bootstrap from"
+        )
+    model = _load_model()
+    # probe pass over the first chunks of site text (generic labels)
+    fired: dict[str, list[str]] = {}
+    for base, chunk in _doc_chunks(text)[:4]:
+        for e in model.predict_entities(chunk, PROBE_LABELS, threshold=0.5):
+            t = e["text"].strip()
+            if 2 < len(t) < 60 and e["score"] >= 0.5:
+                fired.setdefault(e["label"], [])
+                if t not in fired[e["label"]] and len(fired[e["label"]]) < 12:
+                    fired[e["label"]].append(t)
+
+    entities: dict[str, str] = {}
+    for label in PROBE_LABELS:
+        if label not in fired:
+            continue  # dead label on this domain — drop it (less label noise)
+        examples = ", ".join(fired[label][:4])
+        entities[label] = f"a {label} (e.g. from this domain: {examples})"
+
+    seeds: dict[str, list[str]] = {}
+    for label, strings in fired.items():
+        keep = [s for s in strings if len(s) >= 4][:6]
+        if keep:
+            seeds[label] = keep
+    # the site title's distinctive words are the strongest org seeds
+    title_words = [w for w in re.findall(r"[A-Z][\w&-]{3,}", title) if w.lower() not in
+                   {"the", "and", "voor", "met", "home", "page", "welcome"}]
+    if title_words:
+        seeds.setdefault("organization", [])
+        for w in title_words[:3]:
+            if w not in seeds["organization"]:
+                seeds["organization"].append(w)
+
+    relations: dict[str, str] = {}
+    for pair, (rel, desc) in _RELATION_TEMPLATES.items():
+        if pair <= set(fired):
+            relations[rel] = desc
+
+    return {
+        "fetched_url": final_url,
+        "title": title,
+        "site_chars": len(text),
+        "entities": entities,
+        "relations": relations,
+        "seed_entities": seeds,
+        "note": "labels conditioned on YOUR site's vocabulary — edit freely; "
+                "seeds are exact-match gazetteer entries guaranteed found",
+    }
+
+
 # --- wire contract (mirrors _contract.py in ml-knowledgegraph) --------------
+
+class BootstrapRequest(BaseModel):
+    url: str  # domain or full URL — the client's website
+
 
 class NerRequest(BaseModel):
     text: str
@@ -265,6 +394,10 @@ class NerRequest(BaseModel):
     # Progressive context: entities found in chunks 1..N-1 are re-matched
     # in later chunks + a final full-doc sweep (see EntityVocab).
     propagate: bool = True
+    # Known-context gazetteer (QUALITY-LEVERS config pre-fill): label ->
+    # exact strings guaranteed found from the first chunk. Typically the
+    # output of /schema/bootstrap.
+    seed_entities: Optional[dict[str, list[str]]] = None
 
 
 class NerEntity(BaseModel):
@@ -296,6 +429,9 @@ class ExtractRequest(BaseModel):
     # and a final full-doc sweep back-fills everything (relations stay
     # model-only — see EntityVocab docstring).
     propagate: bool = True
+    # Known-context gazetteer seeds (from /schema/bootstrap): label ->
+    # exact strings, present in results from the first chunk.
+    seed_entities: Optional[dict[str, list[str]]] = None
 
 
 class ExtractResponse(BaseModel):
@@ -318,6 +454,17 @@ def demo_page() -> FileResponse:
     Served same-origin so fetch('/extract') needs no CORS."""
     return FileResponse(
         os.path.join(os.path.dirname(__file__), "demo.html"),
+        media_type="text/html",
+    )
+
+
+@app.get("/local", include_in_schema=False)
+def local_chat_page() -> FileResponse:
+    """LFM2.5-350M chat running ENTIRELY client-side (transformers.js,
+    WebGPU with WASM fallback, ~294 MB int4 ONNX cached by the browser).
+    The server only serves this static file — inference is on-device."""
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "local-chat.html"),
         media_type="text/html",
     )
 
@@ -350,6 +497,16 @@ def _check_bounds(text: str) -> None:
         )
 
 
+@app.post("/schema/bootstrap")
+def schema_bootstrap(req: BootstrapRequest) -> dict:
+    """Derive a first-shot extraction schema from the client's website:
+    probe-label NER over the fetched site text → labels that fire (with
+    examples from THEIR vocabulary) + gazetteer seeds + relation templates.
+    Prefills the demo UI's schema editors; 'seed_entities' flows into
+    /ner + /extract for guaranteed-recall first shots."""
+    return _bootstrap_schema(req.url)
+
+
 @app.post("/ner", response_model=NerResponse)
 def ner(req: NerRequest) -> NerResponse:
     _check_bounds(req.text)
@@ -358,8 +515,14 @@ def ner(req: NerRequest) -> NerResponse:
 
     best: dict[tuple, dict] = {}
     chunks = _doc_chunks(req.text)
-    vocab = EntityVocab() if len(chunks) > 1 else None
+    vocab = EntityVocab() if len(chunks) > 1 or req.seed_entities else None
     propagated = 0
+    if vocab is not None and req.seed_entities:
+        for label, strings in req.seed_entities.items():
+            if label not in req.labels:
+                continue  # only seed labels the caller actually requested
+            for s in strings:
+                vocab.add(s, label)
     for base, ctext in chunks:
         raw = model.predict_entities(
             ctext, req.labels, threshold=req.threshold
@@ -386,7 +549,7 @@ def ner(req: NerRequest) -> NerResponse:
         backend=BACKEND,
         elapsed_ms=elapsed_ms,
         chunks=len(chunks) if len(chunks) > 1 else None,
-        propagated=propagated if len(chunks) > 1 else None,
+        propagated=propagated if (len(chunks) > 1 or req.seed_entities) else None,
     )
 
 
@@ -402,8 +565,14 @@ def extract(req: ExtractRequest) -> ExtractResponse:
     ent_best: dict[tuple, dict] = {}
     rel_best: dict[tuple, dict] = {}
     chunks = _doc_chunks(req.text)
-    vocab = EntityVocab() if len(chunks) > 1 else None
+    vocab = EntityVocab() if len(chunks) > 1 or req.seed_entities else None
     propagated = 0
+    if vocab is not None and req.seed_entities:
+        for label, strings in req.seed_entities.items():
+            if label not in labels:
+                continue  # only seed labels the caller actually requested
+            for s in strings:
+                vocab.add(s, label)
 
     for base, ctext in chunks:
         if req.relations:
@@ -475,5 +644,5 @@ def extract(req: ExtractRequest) -> ExtractResponse:
         backend=BACKEND,
         elapsed_ms=elapsed_ms,
         chunks=len(chunks) if len(chunks) > 1 else None,
-        propagated=propagated if len(chunks) > 1 else None,
+        propagated=propagated if (len(chunks) > 1 or req.seed_entities) else None,
     )

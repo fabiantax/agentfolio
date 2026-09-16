@@ -104,6 +104,8 @@ curl -s localhost:18080/ner -H 'content-type: application/json' \
 | v0.1.2 | sentence-aligned chunking + exact offsets + dedup |
 | v0.1.3 | progressive context (EntityVocab) + consolidation sweep + propagate flag |
 | v0.1.4 | built-in demo UI at `/` |
+| v0.1.5 | `/local` — LFM2.5-350M chat running 100% client-side (transformers.js, WebGPU/wasm) |
+| v0.1.6 | domain bootstrap: `/schema/bootstrap` fetches the client's site → fired-label schema with their vocabulary + gazetteer seeds (seed_entities on /ner+/extract, guaranteed-recall first shots) |
 
 ## Open (honest)
 

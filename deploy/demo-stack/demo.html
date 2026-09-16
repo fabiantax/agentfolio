@@ -46,7 +46,24 @@
   <p class="sub">knowledgator/gliformer-base-v1 · CPU · veld /extract contract ·
      sentence-aligned chunking + progressive context (entities found in earlier
      chunks are carried into later ones). Labels are free text — edit the schema
-     below and re-run; the model re-conditions instantly.</p>
+     below and re-run; the model re-conditions instantly.
+     <a href="/local">Also: LFM2.5-350M chat that runs 100% in your browser (WebGPU) →</a></p>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>First-shot domain bootstrap — your website in, tailored schema out</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <input id="domain" placeholder="yourdomain.nl or https://…" spellcheck="false"
+             style="flex:1; min-width:240px; background:#10131a; color:var(--fg);
+                    border:1px solid var(--line); border-radius:8px; padding:9px 12px; font-size:14px;">
+      <button id="boot" style="margin-top:0; background:#2f6b4f; color:#e6e9ef;">Bootstrap schema from site</button>
+    </div>
+    <div class="sub" id="bootstat" style="margin:8px 0 0;">
+      Fetches the site, keeps only labels that fire on YOUR vocabulary, adds
+      real examples to the label text, and gazetteer-seeds entity names —
+      the first extraction is then domain-adapted, not generic.</div>
+    <label style="margin-top:10px;">Seed entities (JSON: label → [strings], exact-match gazetteer; from bootstrap or hand-written)</label>
+    <textarea id="seeds" class="small"></textarea>
+  </div>
 
   <div class="grid">
     <div class="card">
@@ -119,6 +136,8 @@ async function run() {
     };
     const rels = JSON.parse($("rels").value || "null");
     if (rels && Object.keys(rels).length) body.relations = rels;
+    const seeds = JSON.parse($("seeds").value || "null");
+    if (seeds && Object.keys(seeds).length) body.seed_entities = seeds;
 
     const t0 = performance.now();
     const r = await fetch("/extract", {
@@ -177,6 +196,30 @@ async function run() {
   } finally { btn.disabled = false; }
 }
 $("go").onclick = run;
+
+async function bootstrap() {
+  const btn = $("boot"); btn.disabled = true;
+  $("bootstat").textContent = "fetching site + probing labels…";
+  try {
+    const r = await fetch("/schema/bootstrap", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({url: $("domain").value.trim()})
+    });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 220));
+    const d = await r.json();
+    if (Object.keys(d.entities).length) $("ents").value = JSON.stringify(d.entities, null, 1);
+    if (Object.keys(d.relations).length) $("rels").value = JSON.stringify(d.relations, null, 1);
+    $("seeds").value = JSON.stringify(d.seed_entities, null, 1);
+    const nSeeds = Object.values(d.seed_entities).flat().length;
+    $("bootstat").innerHTML =
+      `<b>${esc(d.title)}</b> — ${d.site_chars} site chars → ${Object.keys(d.entities).length} ` +
+      `labels kept, ${Object.keys(d.relations).length} relations, ${nSeeds} seed entities. ` +
+      `Schema editors prefilled — paste one of YOUR documents and Extract.`;
+  } catch (e) {
+    $("bootstat").innerHTML = `<span class="err">${esc(String(e.message || e))}</span>`;
+  } finally { btn.disabled = false; }
+}
+$("boot").onclick = bootstrap;
 run();
 </script>
 </body>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LFM2.5-350M — local in-browser model (WebGPU)</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e9ef; --dim:#8b93a3; --acc:#5b9dff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin: 0 0 6px; font-size: 13.5px; }
+  a { color: var(--acc); text-decoration: none; }
+  .badge { display:inline-block; padding:1px 10px; border-radius:10px; font-size:12px;
+           border:1px solid var(--line); color:var(--dim); margin-left:8px; vertical-align:middle; }
+  .badge.on { color:#7ee2a8; border-color:#2f6b4f; }
+  .card { background: var(--panel); border:1px solid var(--line); border-radius:10px;
+          padding:14px 16px; margin-top:14px; }
+  #log { min-height: 260px; max-height: 52vh; overflow-y:auto; }
+  .msg { margin: 10px 0; white-space: pre-wrap; }
+  .msg b { display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.08em;
+           color:var(--dim); margin-bottom:2px; }
+  .msg.user { color:#cdd6e4; } .msg.ai { color:var(--fg); }
+  .row { display:flex; gap:10px; margin-top:12px; }
+  textarea { flex:1; background:#10131a; color:var(--fg); border:1px solid var(--line);
+             border-radius:8px; padding:10px; font:14px/1.5 inherit; resize:vertical; min-height:52px; }
+  button { background:var(--acc); border:none; color:#08111f; font-weight:700;
+           padding:10px 20px; border-radius:8px; font-size:14px; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:wait; }
+  .bar { height:8px; background:#10131a; border:1px solid var(--line); border-radius:6px;
+         overflow:hidden; margin:10px 0 4px; }
+  .bar > div { height:100%; width:0%; background:var(--acc); transition:width .3s; }
+  .stats { font-size:12.5px; color:var(--dim); display:flex; gap:16px; flex-wrap:wrap; }
+  .stats b { color:var(--fg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LFM2.5-350M — runs entirely in your browser <span id="backend" class="badge">checking…</span></h1>
+  <p class="sub">LiquidAI LFM2.5-350M (Apache-2.0-style Liquid license), int4 ONNX, ~294 MB,
+     loaded once and cached by the browser. No server round-trips at inference time —
+     tokens are generated on YOUR device. WebGPU when available, WASM fallback otherwise.
+     <a href="/">← back to the extraction demo</a></p>
+
+  <div class="card">
+    <div class="bar"><div id="prog"></div></div>
+    <div class="stats" id="loadstats">model not loaded</div>
+  </div>
+
+  <div class="card">
+    <div id="log"><div class="msg"><b>note</b>Pick a preset or type, then Send. First load
+      downloads ~294 MB (cached afterwards); first token takes a moment.</div></div>
+    <div class="row">
+      <textarea id="q" placeholder="Ask the local model anything…">Explain in two sentences what named-entity recognition is good for.</textarea>
+      <button id="send">Send</button>
+    </div>
+    <div class="row" style="gap:8px; flex-wrap:wrap;">
+      <button id="load" style="background:#2c5f8a; color:#e6e9ef;">Load model</button>
+      <button class="preset" style="background:#262b36; color:#e6e9ef;" data-q="Summarize: Alice Jansen works at Acme Corp in London. Bob de Vries joined Acme Corp in 2021 after leaving Initech.">Summarize sample doc</button>
+      <button class="preset" style="background:#262b36; color:#e6e9ef;" data-q="List 5 entity types worth extracting from invoices, one line each.">Suggest entity types</button>
+    </div>
+    <div class="stats" id="genstats"></div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const hasGPU = typeof navigator !== "undefined" && !!navigator.gpu;
+$("backend").textContent = hasGPU ? "WebGPU" : "WASM (this browser has no WebGPU)";
+$("backend").classList.toggle("on", hasGPU);
+
+const MODEL = "onnx-community/LFM2.5-350M-ONNX";
+const DTYPE = "q4";  // int4 weights, fp32 compute — works on WebGPU AND wasm
+let pipe = null, busy = false;
+
+function add(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "ai");
+  d.innerHTML = "<b>" + role + "</b>";
+  d.appendChild(document.createTextNode(text));
+  $("log").appendChild(d);
+  $("log").scrollTop = 1e9;
+  return d;
+}
+
+async function load() {
+  if (pipe) return;
+  $("load").disabled = true;
+  $("loadstats").innerHTML = "downloading model + tokenizer…";
+  const { pipeline, env } = await import(
+    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
+  env.allowLocalModels = false;
+  const t0 = performance.now();
+  pipe = await pipeline("text-generation", MODEL, {
+    dtype: DTYPE, device: hasGPU ? "webgpu" : "wasm",
+    progress_callback: p => {
+      if (p.status === "progress" && p.total) {
+        const pct = Math.round(p.loaded / p.total * 100);
+        $("prog").style.width = pct + "%";
+        $("loadstats").innerHTML = p.file.includes("tokenizer")
+          ? "tokenizer…" : p.file + " — " + pct + "%";
+      }
+    },
+  });
+  const secs = ((performance.now() - t0) / 1000).toFixed(1);
+  $("prog").style.width = "100%";
+  $("loadstats").innerHTML =
+    "loaded <b>" + MODEL + "</b> (" + DTYPE + ", " + secs + " s) on <b>" +
+    (hasGPU ? "WebGPU" : "WASM") + "</b> — cached for next visits";
+}
+
+// LFM2.5 chat template (from the model card) — built manually so it works
+// regardless of tokenizer chat_template presence.
+function chatPrompt(user) {
+  return "<|startoftext|><|im_start|>system\nYou are a concise, precise assistant " +
+         "embedded in a document-extraction demo. Answer in at most a few sentences." +
+         "<|im_end|>\n<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n";
+}
+
+async function send(text) {
+  if (busy) return;
+  if (!pipe) await load();
+  busy = true; $("send").disabled = true;
+  add("user", text);
+  const node = add("assistant", "");
+  const t0 = performance.now(); let n = 0;
+  const { TextStreamer } = await import(
+    "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
+  const streamer = new TextStreamer(pipe.tokenizer, {
+    skip_prompt: true, skip_special_tokens: true,
+    callback_function: t => { n += t.length; node.textContent += t; $("log").scrollTop = 1e9; },
+  });
+  try {
+    const out = await pipe(chatPrompt(text), {
+      max_new_tokens: 220, temperature: 0.1, top_k: 50,
+      repetition_penalty: 1.05, do_sample: true, streamer,
+    });
+    let full = out[0].generated_text;
+    const cut = full.indexOf("<|im_end|>", full.indexOf("assistant\n") + 10);
+    if (cut > 0) node.textContent = full.slice(full.indexOf("assistant\n") + 10, cut).trim();
+    const dt = (performance.now() - t0) / 1000;
+    const toks = Math.max(1, Math.round(node.textContent.length / 4));
+    $("genstats").innerHTML = "<b>" + dt.toFixed(1) + " s</b> · ~<b>" +
+      (toks / dt).toFixed(1) + " tok/s</b> · backend <b>" + (hasGPU ? "WebGPU" : "WASM") +
+      "</b> · zero network calls";
+  } catch (e) {
+    node.textContent = "error: " + e;
+  } finally { busy = false; $("send").disabled = false; }
+}
+
+$("send").onclick = () => { const v = $("q").value.trim(); if (v) send(v); };
+$("q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("send").click(); }
+});
+$("load").onclick = load;
+document.querySelectorAll(".preset").forEach(b =>
+  b.onclick = () => { $("q").value = b.dataset.q; $("send").click(); });
+</script>
+</body>
+</html>

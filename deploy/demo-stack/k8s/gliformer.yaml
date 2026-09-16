@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: gliformer
-          image: 100.112.37.119:3200/fabiantax/gliformer:v0.1.4
+          image: 100.112.37.119:3200/fabiantax/gliformer:v0.1.6
           ports:
             - containerPort: 8080
           env:
