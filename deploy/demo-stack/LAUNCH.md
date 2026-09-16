@@ -30,15 +30,18 @@ k3s gets a containerd mirror via `registries.yaml` in cloud-init).
 cd ~/Developer/personal/agentfolio/deploy/demo-stack
 
 podman build -f Containerfile.gliformer \
-  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.3 .
+  -t 100.112.37.119:3200/fabiantax/gliformer:v0.1.4 .
 
 podman run -d --name gliformer-demo -p 18080:8080 --memory 3g \
-  100.112.37.119:3200/fabiantax/gliformer:v0.1.3
+  100.112.37.119:3200/fabiantax/gliformer:v0.1.4
 # NOTE --memory 3g: fp32 model load PEAKS >2 GiB (OOMKilled at 2g, measured
 # 2026-09-15); steady-state RSS is ~1.7 GiB. Same numbers are in k8s limits.
 
 # model loads lazily — /health shows model_loaded:false until first call
 curl -s localhost:18080/health | jq
+# DEMO UI (v0.1.4): open http://localhost:18080/ — paste a doc, edit the
+# schema, entities render highlighted (model vs propagated), relations table,
+# chunk/latency stats. Browser-verified 2026-09-16 (26 ents/3 chunks/9 propagated).
 curl -s localhost:18080/ner -H 'content-type: application/json' \
   -d '{"text":"Alice works at Acme Corp in London.","labels":["person","organization"],"threshold":0.5}' | jq
 ```
@@ -52,7 +55,7 @@ at this service — same wire contract as the gliner2 bundle.
 ```bash
 podman login 100.112.37.119:3200 -u fabiantax \
   -p "$(token from ~/.config/gitea)"
-podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.3
+podman push 100.112.37.119:3200/fabiantax/gliformer:v0.1.4
 ```
 
 ## C. One-time — bake the k3s base snapshot (~10 min, then €0 idle)

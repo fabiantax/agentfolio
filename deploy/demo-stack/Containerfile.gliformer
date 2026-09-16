@@ -32,6 +32,7 @@ RUN HF_HUB_DOWNLOAD_TIMEOUT=120 python -c "from huggingface_hub import snapshot_
 
 WORKDIR /app
 COPY gliformer_main.py /app/gliformer_main.py
+COPY demo.html /app/demo.html
 
 EXPOSE 8080
 

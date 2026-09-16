@@ -33,6 +33,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 MODEL_ID = os.environ.get(
@@ -308,6 +309,17 @@ class ExtractResponse(BaseModel):
 
 
 # --- endpoints -------------------------------------------------------------
+
+
+@app.get("/", include_in_schema=False)
+def demo_page() -> FileResponse:
+    """Client-facing demo UI: paste a doc, edit the schema, see entities
+    highlighted (model vs propagated), relations, chunk/latency stats.
+    Served same-origin so fetch('/extract') needs no CORS."""
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "demo.html"),
+        media_type="text/html",
+    )
 
 
 @app.get("/health")

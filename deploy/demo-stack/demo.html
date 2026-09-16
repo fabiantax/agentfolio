@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GLiFormer extraction demo — AgentFolio stack</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e9ef; --dim:#8b93a3; --acc:#5b9dff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.55 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin: 0 0 20px; font-size: 13.5px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+             color:var(--dim); margin:0 0 10px; }
+  textarea { width:100%; min-height:220px; background:#10131a; color:var(--fg);
+             border:1px solid var(--line); border-radius:8px; padding:10px;
+             font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; resize:vertical; }
+  textarea.small { min-height:92px; }
+  label { display:block; font-size:12.5px; color:var(--dim); margin:10px 0 4px; }
+  button { background:var(--acc); border:none; color:#08111f; font-weight:700;
+           padding:10px 22px; border-radius:8px; font-size:14px; cursor:pointer; margin-top:14px; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .stats { display:flex; gap:18px; flex-wrap:wrap; margin:14px 0 6px; font-size:13px; color:var(--dim); }
+  .stats b { color:var(--fg); }
+  .out { background:#10131a; border:1px solid var(--line); border-radius:8px;
+         padding:12px; min-height:140px; font-size:14.5px; }
+  .ent { border-radius:4px; padding:1px 3px; cursor:default; }
+  .prop { outline:1px dashed rgba(91,157,255,.55); outline-offset:1px; }
+  .legend { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 2px; font-size:12px; }
+  .chip { padding:1px 8px; border-radius:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin-top:6px; }
+  td, th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--dim); font-weight:600; }
+  .err { color:#ff8f8f; }
+  .rel-head { color:#7ee2a8; } .rel-tail { color:#f2c47e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GLiFormer extraction demo</h1>
+  <p class="sub">knowledgator/gliformer-base-v1 · CPU · veld /extract contract ·
+     sentence-aligned chunking + progressive context (entities found in earlier
+     chunks are carried into later ones). Labels are free text — edit the schema
+     below and re-run; the model re-conditions instantly.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Document</h2>
+      <textarea id="doc"></textarea>
+      <div class="grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+        <div>
+          <label>Entity schema (JSON: label → description)</label>
+          <textarea id="ents" class="small"></textarea>
+        </div>
+        <div>
+          <label>Relations (JSON: type → description) — optional</label>
+          <textarea id="rels" class="small"></textarea>
+        </div>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;">
+        <input type="checkbox" id="prop" checked>
+        Progressive context (propagate entities across chunks)
+      </label>
+      <label>Threshold: <span id="thrval">0.5</span></label>
+      <input type="range" id="thr" min="0.1" max="0.9" step="0.05" value="0.5" style="width:100%">
+      <button id="go">Extract</button>
+      <span id="status" class="sub"></span>
+    </div>
+
+    <div class="card">
+      <h2>Result</h2>
+      <div class="stats" id="stats"></div>
+      <div class="legend" id="legend"></div>
+      <div class="out" id="out">Extraction output renders here.</div>
+      <h2 style="margin-top:16px;">Relations</h2>
+      <table id="reltable"><thead><tr><th>head</th><th>relation</th><th>tail</th><th>score</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = ["#2c5f8a","#6b4f8a","#2f6b4f","#8a5a2c","#8a2c4f","#2c6b8a","#5a5a2c","#4a2c8a"];
+const SAMPLE_DOC =
+`Alice Jansen works at Acme Corp in London. Her manager Bob de Vries joined Acme Corp in 2021 after leaving Initech. ` +
+`The quarterly review covered infrastructure costs and vendor contracts. `.repeat(6) +
+`Carol Meyer from the Berlin office visited the Acme Corp headquarters last week to review the Globex partnership. ` +
+`Dennis Bakker sent the invoice from Umbrella Ltd and contested the Soylent Corp tariff. `.repeat(4) +
+`Appendix A raw log lines follow. [ok] sync Globex queue [ok] audit Carol Meyer mailbox [ok] sync Umbrella Ltd queue`;
+
+const SAMPLE_ENTS = {
+  person: "a human being, full or partial name",
+  organization: "a company, subsidiary, or public body",
+  location: "a city, region, or place",
+  date: "a point in time"
+};
+const SAMPLE_RELS = { works_at: "a person is employed by an organization" };
+
+const $ = id => document.getElementById(id);
+$("doc").value = SAMPLE_DOC;
+$("ents").value = JSON.stringify(SAMPLE_ENTS, null, 1);
+$("rels").value = JSON.stringify(SAMPLE_RELS, null, 1);
+$("thr").oninput = e => $("thrval").textContent = e.target.value;
+
+function esc(s){ return s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+async function run() {
+  const btn = $("go"); btn.disabled = true; $("status").textContent = "running…";
+  try {
+    const body = {
+      text: $("doc").value,
+      entities: JSON.parse($("ents").value || "{}"),
+      threshold: parseFloat($("thr").value),
+      propagate: $("prop").checked
+    };
+    const rels = JSON.parse($("rels").value || "null");
+    if (rels && Object.keys(rels).length) body.relations = rels;
+
+    const t0 = performance.now();
+    const r = await fetch("/extract", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+    const d = await r.json();
+    const roundtrip = Math.round(performance.now() - t0);
+
+    // stats
+    const flat = Object.entries(d.entities).flatMap(([lab, es]) => es.map(e => ({...e, label: lab})));
+    const byModel = flat.filter(e => e.source !== "propagated").length;
+    $("stats").innerHTML =
+      `<span>entities <b>${flat.length}</b> (${byModel} model + ${flat.length - byModel} propagated)</span>` +
+      `<span>relations <b>${Object.values(d.relations).flat().length}</b></span>` +
+      `<span>chunks <b>${d.chunks ?? 1}</b></span>` +
+      `<span>server <b>${d.elapsed_ms} ms</b></span><span>round-trip <b>${roundtrip} ms</b></span>`;
+
+    // legend
+    const labels = Object.keys(d.entities);
+    $("legend").innerHTML = labels.map((l, i) =>
+      `<span class="chip ent" style="background:${COLORS[i % COLORS.length]}">${esc(l)}</span>`).join("") +
+      `<span class="chip" style="border:1px dashed var(--acc); color:var(--dim)">propagated</span>`;
+
+    // highlighted text: collect non-overlapping spans (model spans first)
+    const spans = flat.slice().sort((a, b) =>
+      (a.source === "propagated") - (b.source === "propagated") || a.start - b.start || (b.end - b.start) - (a.end - a.start));
+    const taken = []; const keep = [];
+    for (const s of spans) {
+      if (taken.every(([a, b]) => s.start >= b || s.end <= a)) { keep.push(s); taken.push([s.start, s.end]); }
+    }
+    keep.sort((a, b) => a.start - b.start);
+    const text = $("doc").value; let html = "", pos = 0;
+    const colorOf = l => COLORS[labels.indexOf(l) % COLORS.length];
+    for (const s of keep) {
+      html += esc(text.slice(pos, s.start));
+      const cls = "ent" + (s.source === "propagated" ? " prop" : "");
+      const score = (s.score ?? 0).toFixed ? (s.score).toFixed(2) : s.score;
+      html += `<span class="${cls}" style="background:${colorOf(s.label)}" title="${esc(s.label)} · ${score} · ${s.source}">${esc(text.slice(s.start, s.end))}</span>`;
+      pos = s.end;
+    }
+    html += esc(text.slice(pos));
+    $("out").innerHTML = html;
+
+    // relations table
+    const tbody = $("reltable").querySelector("tbody");
+    tbody.innerHTML = Object.values(d.relations).flat().map(r =>
+      `<tr><td class="rel-head">${esc(r.head)}</td><td>${esc(r.relation)}</td>` +
+      `<td class="rel-tail">${esc(r.tail)}</td><td>${r.score.toFixed(3)}</td></tr>`).join("")
+      || `<tr><td colspan="4" style="color:var(--dim)">none above threshold</td></tr>`;
+
+    $("status").textContent = "ok";
+  } catch (e) {
+    $("status").innerHTML = `<span class="err">${esc(String(e.message || e))}</span>`;
+  } finally { btn.disabled = false; }
+}
+$("go").onclick = run;
+run();
+</script>
+</body>
+</html>
