@@ -24,19 +24,24 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: SDK sanity
-        run: dotnet --version
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet --version
 
       - name: Restore
-        run: dotnet restore
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet restore
 
       - name: Build (warnaserror)
-        run: dotnet build -warnaserror --no-restore
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet build -warnaserror --no-restore
 
       - name: Test (with coverage)
         run: |
-          dotnet test --no-build --verbosity minimal \
-            --collect:"XPlat Code Coverage" \
-            --results-directory ./TestResults
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet test --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
 
       - name: Coverage summary
         if: always()
@@ -44,18 +49,11 @@ jobs:
           dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.4 || true
           REPORTGEN="$HOME/.dotnet/tools/reportgenerator"
           if [ -x "$REPORTGEN" ]; then
-            "$REPORTGEN" -reports:"TestResults/**/coverage.cobertura.xml" \
-              -targetdir:cover-report -reporttypes:TextSummary
+            "$REPORTGEN" -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:cover-report -reporttypes:TextSummary
             echo "=== LINE/BRANCH COVERAGE ==="
             grep -E "Line coverage|Branch coverage|Method coverage" cover-report/Summary.txt || true
           else
-            python3 - <<'EOF'
-            import glob, xml.etree.ElementTree as ET
-            for f in glob.glob("TestResults/**/coverage.cobertura.xml", recursive=True):
-                r = ET.parse(f).getroot()
-                lr, br = r.get("line-rate"), r.get("branch-rate")
-                print(f"coverage: line {float(lr)*100:.1f}% branch {float(br)*100:.1f}% ({f})")
-            EOF
+            python3 -c "import glob,xml.etree.ElementTree as ET; [print('coverage: line', round(float(ET.parse(f).getroot().get('line-rate'))*100,1), '% branch', round(float(ET.parse(f).getroot().get('branch-rate'))*100,1), '%', f) for f in glob.glob('TestResults/**/coverage.cobertura.xml', recursive=True)]"
           fi
 
       - name: Clean-architecture gate (Atlas)
