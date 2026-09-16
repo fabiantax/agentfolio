@@ -6,42 +6,34 @@ on:
 
 jobs:
   build-test:
-    # Host lane: the live strix-runner serves labels ubuntu-latest/strix-host/self-hosted
-    # as HOST jobs (no docker). Never use container: here — that wedges on the docker socket.
-    # strix-main has NO live daemon (config exists, daemon doesn't) — runs queue forever.
-    runs-on: strix-host
+    # k8s lane: ci-k8s runner executes jobs as PODS (containers work natively).
+    # Independent of the single-slot strix-runner host lane (which long GraphFusion
+    # jobs block). The host-lane variant needs no container:; this one uses the
+    # official SDK image so the build env is clean and reproducible.
+    runs-on: ci-k8s
+    container: mcr.microsoft.com/dotnet/sdk:10.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: SDK sanity
-        run: |
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet --version
+        run: dotnet --version
 
       - name: Restore
-        run: |
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet restore
+        run: dotnet restore
 
       - name: Build (warnaserror)
-        run: |
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet build -warnaserror --no-restore
-          echo "BUILD_RC=$?"
+        run: dotnet build -warnaserror --no-restore
 
       - name: Test (with coverage)
         run: |
-          export PATH="$HOME/.dotnet:$PATH"
           dotnet test --no-build --verbosity minimal \
             --collect:"XPlat Code Coverage" \
             --results-directory ./TestResults
-          echo "TEST_RC=$?"
 
       - name: Coverage summary
         if: always()
         run: |
-          export PATH="$HOME/.dotnet:$PATH"
           dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.4 || true
           REPORTGEN="$HOME/.dotnet/tools/reportgenerator"
           if [ -x "$REPORTGEN" ]; then
@@ -50,7 +42,6 @@ jobs:
             echo "=== LINE/BRANCH COVERAGE ==="
             grep -E "Line coverage|Branch coverage|Method coverage" cover-report/Summary.txt || true
           else
-            # fallback: raw cobertura line-rate parse
             python3 - <<'EOF'
             import glob, xml.etree.ElementTree as ET
             for f in glob.glob("TestResults/**/coverage.cobertura.xml", recursive=True):
@@ -60,13 +51,12 @@ jobs:
             EOF
           fi
 
-      - name: Clean-architecture gate (Atlas, host binary)
+      - name: Clean-architecture gate (Atlas)
         run: |
-          # Host atlas at ~/.local/bin/atlas (285MB, not fetchable in CI) — skip loudly, never silently
-          if [ ! -x "$HOME/.local/bin/atlas" ]; then
-            echo "::warning::atlas binary not present on runner — arch-gate SKIPPED (gate runs parent-side + nightly)"
+          # atlas binary is host-only (285MB) — not present in the SDK container.
+          # Loud skip (never silently green); gate runs parent-side on every PR.
+          if ! command -v atlas >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/atlas" ]; then
+            echo "::warning::atlas not present in CI container — arch-gate SKIPPED here; enforced parent-side per-PR"
             exit 0
           fi
-          rm -rf $(find . -type d \( -name bin -o -name obj \) 2>/dev/null) 2>/dev/null || true
           ./scripts/arch-gate.sh
-          echo "GATE_RC=$?"
