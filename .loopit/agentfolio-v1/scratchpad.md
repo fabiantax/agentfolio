@@ -98,3 +98,13 @@ PID death, don't trust command exit 0.
 ### v1.1 wave state
 S1 (deleg_c44b9c0c) dispatched 01:35, glm-5.3-flash, worktree /tmp/s1-tenancy.
 S2/S3 parallel after S1 merges; S4 after S3; S5 last.
+
+## v1.1 WAVE PROGRESS (2026-09-16 02:00-03:05)
+S1 tenancy: PR #32 merged (64/64). Salvage note: box-wide kani/cbmc load storm (487) killed the
+child at final gate — 8 parent-side fixes incl. ULID off-by-one. Runner loop killed; herdr recovered.
+S2 OAuth: PR #33 merged (71/71). S3 uploads: PR #34 merged (80/80 after Program.cs union merge).
+S4 sandbox: dispatched (deleg_5b94afd1) — DESIGN PIVOT: process-isolated extractor instead of WASI
+(toolchain unavailable offline); security property (untrusted bytes outside API process) preserved.
+S5 share+migration: last, after S4.
+Load discipline: kani-narrow runner (ctam_proto lane) re-fired after first kill — always kill the
+bash LOOP pid, not just the cbmc child.
