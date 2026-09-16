@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using AgentFolio.Agents;
 using AgentFolio.Platform.Auth;
+using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Slices.Chat;
+using Slices.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,15 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
 builder.Services.AddAuthorization();
+
+// Tenancy (spec 002 s1-01): global registry + per-tenant shard LRU.
+builder.Services.AddSingleton(_ =>
+    new TenantRegistry(Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB")
+        ?? Path.Combine(AppContext.BaseDirectory,
+            Path.GetFileName(Environment.GetEnvironmentVariable("AGENTFOLIO_DB_PATH") ?? "agentfolio.db")
+                .Replace("agentfolio.db", "agentfolio-global.db"))));
+builder.Services.AddSingleton(sp => new TenantShardRegistry(
+    sp.GetRequiredService<TenantRegistry>().GlobalDbPath));
 
 var app = builder.Build();
 
@@ -95,6 +106,7 @@ app.MapGet("/weatherforecast", () =>
 });
 
 app.MapChatApi();
+app.MapTenancyApi();
 
 app.Run();
 
