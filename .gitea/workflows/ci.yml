@@ -14,13 +14,12 @@ jobs:
     # main). SDK comes from setup-dotnet per-run instead (same pattern as
     # the working aliestax setup-node lane; egress + runner cache OK).
     runs-on: ci-k8s
-    env:
-      # runner pod image has no libicu (dotnet FailFast without it — run #55,
-      # exit 134). Invariant globalization is sufficient for build+test.
-      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install libicu (runner image lacks it; dotnet FailFasts without)
+        run: dnf install -y libicu >/dev/null 2>&1 || dnf install -y libicu-*
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
