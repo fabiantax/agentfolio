@@ -50,6 +50,42 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """;
         await cmd.ExecuteNonQueryAsync(ct);
+
+        // s5-05 migration: share password hash column (NULL = ungated share).
+        await using var shareCol = conn.CreateCommand();
+        shareCol.CommandText = "ALTER TABLE tenants ADD COLUMN share_pw_hash TEXT NULL;";
+        try
+        {
+            await shareCol.ExecuteNonQueryAsync(ct);
+        }
+        catch (SqliteException)
+        {
+            // Column already exists (ALTER TABLE has no IF NOT EXISTS in SQLite).
+        }
+    }
+
+    /// <summary>Share-gate password hash for a tenant (null = ungated).</summary>
+    public async Task<string?> GetSharePasswordHashAsync(string tenantId, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT share_pw_hash FROM tenants WHERE tenant_id = $id;";
+        cmd.Parameters.AddWithValue("$id", tenantId);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s && s.Length > 0 ? s : null;
+    }
+
+    /// <summary>Sets (or clears with null) the share-gate password hash for a tenant.</summary>
+    public async Task SetSharePasswordHashAsync(string tenantId, string? encodedHash, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE tenants SET share_pw_hash = $h WHERE tenant_id = $id;";
+        cmd.Parameters.AddWithValue("$h", (object?)encodedHash ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$id", tenantId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Creates a tenant with a fresh ULID. Throws SqliteException on duplicate slug.</summary>

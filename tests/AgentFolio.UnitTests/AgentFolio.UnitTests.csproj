@@ -15,6 +15,7 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="OpenAI" />
       <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Share\Slices.Share.csproj" />
   </ItemGroup>
 
   <ItemGroup>

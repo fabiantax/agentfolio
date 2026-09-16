@@ -9,8 +9,27 @@ using Slices.Chat;
 using Slices.Uploads;
 using AgentFolio.Platform.Storage;
 using Slices.Tenancy;
+using Slices.Share;
+using AgentFolio.Platform.Migrations;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// s5-05 one-shot migration: --migrate-single-to-tenant (checked BEFORE builder.Build).
+if (args.Contains("--migrate-single-to-tenant"))
+{
+    var sourcePath = Environment.GetEnvironmentVariable("AGENTFOLIO_DB_PATH");
+    var globalDb = Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB");
+    if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(globalDb))
+    {
+        Console.Error.WriteLine("error: --migrate-single-to-tenant requires AGENTFOLIO_DB_PATH (source db) and AGENTFOLIO_GLOBAL_DB env vars.");
+        Environment.Exit(2);
+    }
+    var migRegistry = new TenantRegistry(globalDb);
+    using var migShards = new TenantShardRegistry(globalDb);
+    var result = await MigrateSingleToTenant.Run(sourcePath, migRegistry, migShards);
+    Console.WriteLine($"migration: stars={result.Stars} saves={result.Saves} events={result.Events} tenantId={result.TenantId}");
+    Environment.Exit(0);
+}
 
 // Chat: keyed 'nim' IChatClient (falls back inline when NIM env unset) + conversation store.
 builder.Services.AddNimChatClient();
@@ -126,6 +145,7 @@ app.MapChatApi();
 app.MapUploadsApi();
 app.MapTenancyApi();
 app.MapAuth2Api();
+app.MapShareApi();
 
 app.Run();
 
