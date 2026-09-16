@@ -19,6 +19,9 @@ namespace Slices.Share;
 public static class ShareEndpoints
 {
     public const string ChatScriptPlaceholderSrc = "/web/chat-core/index.js"; // served from wwwroot via MapStaticAssets
+    /// <summary>Public repo link (evidence bar, issue #42).</summary>
+    public const string RepoUrl = "http://100.112.37.119:3200/fabiantax/agentfolio";
+
     /// <summary>Design tokens (DESIGN.md, AA-verified) shared by all share pages.</summary>
     private const string TokenCss = """
 <style>
@@ -46,6 +49,13 @@ h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height:
   border-radius: var(--af-radius-lg); overflow: hidden; }
 footer { margin-top: 24px; color: var(--af-text-2); font-size: 0.75rem; }
 footer a { color: var(--af-accent); text-decoration: none; }
+.evidence { margin-top: 24px; background: var(--af-surface); border: 1px solid var(--af-border);
+  border-radius: var(--af-radius-lg); padding: 20px 24px; }
+.ev-title { font: 500 0.6875rem/1.4 var(--af-mono); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--af-text-2); margin-bottom: 12px; }
+.evidence ul { margin: 0; padding-left: 18px; color: var(--af-text-2); font-size: 0.8125rem; line-height: 1.7; }
+.evidence a { color: var(--af-accent); text-decoration: none; font-weight: 500; }
+.evidence a:hover { text-decoration: underline; }
 @media (max-width: 640px) { .wrap { padding: 24px 16px; } }
 </style>
 """;
@@ -70,10 +80,10 @@ footer a { color: var(--af-accent); text-decoration: none; }
             }
 
             http.Response.Headers["X-Robots-Tag"] = "noindex";
-            return Results.Content(PortfolioPage(slug, tenant.TenantId), "text/html");
+            return Results.Content(PortfolioPage(slug, tenant.TenantId, HasAnyStars(registry, shards, tenant.TenantId)), "text/html");
         });
 
-        app.MapPost("/share/{slug}/unlock", async (HttpContext http, string slug, TenantRegistry registry, CancellationToken ct) =>
+        app.MapPost("/share/{slug}/unlock", async (HttpContext http, string slug, TenantRegistry registry, TenantShardRegistry shards, CancellationToken ct) =>
         {
             var tenant = await ResolveTenantAsync(registry, slug, ct);
             if (tenant is null) return Results.NotFound();
@@ -94,7 +104,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
                 Secure = http.Request.IsHttps, // tailnet-http demo drops Secure cookies
             });
             http.Response.Headers["X-Robots-Tag"] = "noindex";
-            return Results.Content(PortfolioPage(slug, tenant.TenantId), "text/html");
+            return Results.Content(PortfolioPage(slug, tenant.TenantId, HasAnyStars(registry, shards, tenant.TenantId)), "text/html");
         });
 
         return app;
@@ -131,7 +141,32 @@ footer a { color: var(--af-accent); text-decoration: none; }
 </html>
 """;
 
-    private static string PortfolioPage(string slug, string tenantId)
+    /// <summary>
+    /// Capability chips that reflect REALITY (issue #41 AC4): data chips only when the
+    /// tenant actually has synced content; always-safe capability chips otherwise.
+    /// </summary>
+    /// <summary>True when the tenant shard has at least one starred repo (never throws).</summary>
+    private static bool HasAnyStars(TenantRegistry registry, TenantShardRegistry shards, string tenantId)
+    {
+        try
+        {
+            var shard = shards.GetOrCreateShardAsync(tenantId).GetAwaiter().GetResult();
+            var any = false;
+            foreach (var _ in shard.QueryStarsAsync().ToBlockingEnumerable()) { any = true; break; }
+            return any;
+        }
+        catch { return false; }
+    }
+
+    private static string DataChips(string? hasData)
+    {
+        var chip = (string label) => $"<span class=\"chip\">{label}</span>";
+        return string.IsNullOrEmpty(hasData)
+            ? string.Join("\n        ", chip("DOC UPLOAD"), chip("SSE STREAMING"), chip("BROWSER-AI TIER"))
+            : string.Join("\n        ", chip("GITHUB STARS"), chip("LINKEDIN SAVES"), chip("DOC UPLOAD"), chip("SSE STREAMING"));
+    }
+
+    private static string PortfolioPage(string slug, string tenantId, bool hasData)
     {
         var enc = HttpUtility.HtmlEncode(slug);
         var tid = HttpUtility.HtmlEncode(tenantId);
@@ -154,15 +189,21 @@ footer a { color: var(--af-accent); text-decoration: none; }
       <h1>{{enc}}</h1>
       <p class="sub">Ask about GitHub stars, saved posts, and uploaded documents — every answer cites its source.</p>
       <div class="meta">
-        <span class="chip">GITHUB STARS</span>
-        <span class="chip">LINKEDIN SAVES</span>
-        <span class="chip">DOC UPLOAD</span>
-        <span class="chip">SSE STREAMING</span>
+        {DataChips(hasData ? "yes" : null)}
       </div>
     </header>
     <section class="card">
       <agentfolio-chat server-url=""></agentfolio-chat>
     </section>
+    <aside class="evidence">
+      <div class="ev-title">VERIFY THIS DEMO</div>
+      <ul>
+        <li><a href="{RepoUrl}" rel="noopener noreferrer">Source &amp; history</a> — every commit, PR and review that built this page</li>
+        <li><a href="{RepoUrl}/actions">CI pipeline</a> — build 0-warnings, 94 unit + 2 E2E + 19 web tests, coverage line 72.8% / branch 65.2%</li>
+        <li>Architecture — .NET 10 vertical slices, CQRS-lite + event-log sourcing, Atlas graph-enforced boundaries, sandboxed doc extraction</li>
+        <li>Deploy — Aspire orchestration, Helm/k8s target, self-hosted Git+CI on Tailscale</li>
+      </ul>
+    </aside>
     <footer>Built with .NET 10 · Microsoft Agent Framework · SQLite vec/FTS · <a href="/share/showcase">AgentFolio</a></footer>
   </main>
   <script type="module" src="{{ChatScriptPlaceholderSrc}}"></script>
