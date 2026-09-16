@@ -106,6 +106,7 @@ curl -s localhost:18080/ner -H 'content-type: application/json' \
 | v0.1.4 | built-in demo UI at `/` |
 | v0.1.5 | `/local` — LFM2.5-350M chat running 100% client-side (transformers.js, WebGPU/wasm) |
 | v0.1.6 | domain bootstrap: `/schema/bootstrap` fetches the client's site → fired-label schema with their vocabulary + gazetteer seeds (seed_entities on /ner+/extract, guaranteed-recall first shots) |
+| v0.1.7 | SSE stage streaming on bootstrap (fetch → chars → model load → probe i/n → done); browser weights baked + served same-origin under `/models/` (HF layout, immutable cache, zero HF round-trips); dtype per backend (webgpu→q4f16, wasm→q4) |
 
 ## Open (honest)
 

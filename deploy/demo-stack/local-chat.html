@@ -72,7 +72,9 @@ $("backend").textContent = hasGPU ? "WebGPU" : "WASM (this browser has no WebGPU
 $("backend").classList.toggle("on", hasGPU);
 
 const MODEL = "onnx-community/LFM2.5-350M-ONNX";
-const DTYPE = "q4";  // int4 weights, fp32 compute — works on WebGPU AND wasm
+// q4f16 on WebGPU (smaller + f16 compute); q4 for wasm (int4 weights,
+// fp32 compute — wasm can't dequant f16 efficiently)
+const DTYPE = hasGPU ? "q4f16" : "q4";
 let pipe = null, busy = false;
 
 function add(role, text) {
@@ -92,6 +94,15 @@ async function load() {
   const { pipeline, env } = await import(
     "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5");
   env.allowLocalModels = false;
+  // serve weights from THIS origin (HF layout under /models/) — repeat
+  // loads read the browser disk cache (immutable headers), zero HF
+  // round-trips, no CORS preflights. Falls back to huggingface.co if the
+  // host has no baked files.
+  try {
+    const probe = await fetch("/models/" + MODEL + "/resolve/main/config.json",
+                              {method: "HEAD"});
+    if (probe.ok) env.remoteHost = window.location.origin + "/models/";
+  } catch (_) { /* keep HF default */ }
   const t0 = performance.now();
   pipe = await pipeline("text-generation", MODEL, {
     dtype: DTYPE, device: hasGPU ? "webgpu" : "wasm",

@@ -30,6 +30,22 @@ RUN HF_HUB_DOWNLOAD_TIMEOUT=120 python -c "from huggingface_hub import snapshot_
     p = snapshot_download('knowledgator/gliformer-base-v1', max_workers=2); \
     print('downloaded to', p)"
 
+# Bake the BROWSER model too (LFM2.5-350M ONNX, both dtypes) in HF layout so
+# transformers.js can be pointed at this same origin (env.remoteHost) —
+# repeat /local loads hit the browser disk cache, zero HF round-trips.
+RUN M=/models/hf/onnx-community/LFM2.5-350M-ONNX/resolve/main && \
+    mkdir -p $M/onnx && cd $M && \
+    for f in config.json generation_config.json tokenizer.json \
+             tokenizer_config.json special_tokens_map.json; do \
+      curl -fsSL --retry 3 -o $f \
+        "https://huggingface.co/onnx-community/LFM2.5-350M-ONNX/resolve/main/$f" \
+        || true; \
+    done && \
+    for f in model_q4.onnx model_q4.onnx_data model_q4f16.onnx model_q4f16.onnx_data; do \
+      curl -fsSL --retry 3 -o onnx/$f \
+        "https://huggingface.co/onnx-community/LFM2.5-350M-ONNX/resolve/main/onnx/$f"; \
+    done && ls -la onnx/
+
 WORKDIR /app
 COPY gliformer_main.py /app/gliformer_main.py
 COPY demo.html /app/demo.html

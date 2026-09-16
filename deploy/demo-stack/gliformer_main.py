@@ -38,7 +38,7 @@ from urllib.parse import urlparse
 import urllib.request
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 MODEL_ID = os.environ.get(
@@ -381,6 +381,78 @@ def _bootstrap_schema(url: str) -> dict:
     }
 
 
+def _bootstrap_schema_stages(url: str):
+    """Generator version of _bootstrap_schema: yields SSE stage events so
+    the UI can show REAL progress (fetch → chars → model load → probe i/n
+    → done) instead of a static 'working…' line."""
+    import json as _json
+
+    def ev(obj: dict) -> str:
+        return f"data: {_json.dumps(obj)}\n\n"
+
+    yield ev({"stage": "fetch", "url": url, "msg": "fetching site…"})
+    final_url, title, text = _fetch_site(url)
+    if len(text) < 200:
+        raise HTTPException(
+            422, f"site text too thin ({len(text)} chars) to bootstrap from"
+        )
+    yield ev({
+        "stage": "fetched", "msg": f"site fetched — {len(text)} chars",
+        "title": title, "chars": len(text),
+    })
+    if _model is None:
+        yield ev({"stage": "model_load",
+                  "msg": "loading extraction model (first call, ~30-60s)…"})
+    model = _load_model()
+    if _model is not None:
+        yield ev({"stage": "model_ready", "msg": "model ready"})
+
+    fired: dict[str, list[str]] = {}
+    chunks = _doc_chunks(text)[:4]
+    for i, (base, chunk) in enumerate(chunks, 1):
+        yield ev({"stage": "probe", "i": i, "n": len(chunks),
+                  "msg": f"probing labels on site text ({i}/{len(chunks)})…"})
+        for e in model.predict_entities(chunk, PROBE_LABELS, threshold=0.5):
+            t = e["text"].strip()
+            if 2 < len(t) < 60 and e["score"] >= 0.5:
+                fired.setdefault(e["label"], [])
+                if t not in fired[e["label"]] and len(fired[e["label"]]) < 12:
+                    fired[e["label"]].append(t)
+
+    entities: dict[str, str] = {}
+    for label in PROBE_LABELS:
+        if label not in fired:
+            continue
+        examples = ", ".join(fired[label][:4])
+        entities[label] = f"a {label} (e.g. from this domain: {examples})"
+
+    seeds: dict[str, list[str]] = {}
+    for label, strings in fired.items():
+        keep = [s for s in strings if len(s) >= 4][:6]
+        if keep:
+            seeds[label] = keep
+    title_words = [w for w in re.findall(r"[A-Z][\w&-]{3,}", title) if w.lower() not in
+                   {"the", "and", "voor", "met", "home", "page", "welcome"}]
+    if title_words:
+        seeds.setdefault("organization", [])
+        for w in title_words[:3]:
+            if w not in seeds["organization"]:
+                seeds["organization"].append(w)
+
+    relations: dict[str, str] = {}
+    for pair, (rel, desc) in _RELATION_TEMPLATES.items():
+        if pair <= set(fired):
+            relations[rel] = desc
+
+    yield ev({
+        "stage": "done",
+        "msg": f"{len(entities)} labels kept, {len(relations)} relations, "
+               f"{sum(len(v) for v in seeds.values())} seed entities",
+        "fetched_url": final_url, "title": title, "site_chars": len(text),
+        "entities": entities, "relations": relations, "seed_entities": seeds,
+    })
+
+
 # --- wire contract (mirrors _contract.py in ml-knowledgegraph) --------------
 
 class BootstrapRequest(BaseModel):
@@ -498,13 +570,39 @@ def _check_bounds(text: str) -> None:
 
 
 @app.post("/schema/bootstrap")
-def schema_bootstrap(req: BootstrapRequest) -> dict:
-    """Derive a first-shot extraction schema from the client's website:
-    probe-label NER over the fetched site text → labels that fire (with
-    examples from THEIR vocabulary) + gazetteer seeds + relation templates.
-    Prefills the demo UI's schema editors; 'seed_entities' flows into
-    /ner + /extract for guaranteed-recall first shots."""
-    return _bootstrap_schema(req.url)
+def schema_bootstrap(req: BootstrapRequest):
+    """SSE stream of REAL bootstrap stages: fetch → chars fetched → model
+    load (only if cold) → probe i/n per chunk → done (full schema payload
+    in the final event). Consumed by the demo UI's live progress line."""
+    return StreamingResponse(
+        _bootstrap_schema_stages(req.url), media_type="text/event-stream"
+    )
+
+
+# --- browser-model files served SAME-ORIGIN (fast repeat loads) -------------
+# transformers.js can be pointed at any host speaking the HF layout. We bake
+# the ONNX weights into the image and serve them from our own origin with
+# immutable cache headers — repeat /local loads read the browser disk cache,
+# zero HuggingFace round-trips, no CORS preflights.
+
+_MODELS_DIR = os.environ.get("GLIFORMER_MODELS_DIR", "/models/hf")
+
+
+@app.middleware("http")
+async def _immutable_model_cache(request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/models/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+@app.api_route("/models/{rest:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def model_file(rest: str) -> FileResponse:
+    path = os.path.realpath(os.path.join(_MODELS_DIR, rest))
+    if not path.startswith(os.path.realpath(_MODELS_DIR)) or not os.path.isfile(path):
+        raise HTTPException(404, f"no such model file: {rest}")
+    return FileResponse(path)
 
 
 @app.post("/ner", response_model=NerResponse)
