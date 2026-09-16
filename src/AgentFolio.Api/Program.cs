@@ -53,6 +53,7 @@ else
     builder.Services.AddSingleton<IObjectStore, InMemoryObjectStore>();
 }
 builder.Services.AddSingleton<UploadService>();
+builder.Services.AddSingleton<ExtractionService>();
 builder.Services.AddHostedService<UploadExpiryEnforcer>();
 
 var app = builder.Build();
