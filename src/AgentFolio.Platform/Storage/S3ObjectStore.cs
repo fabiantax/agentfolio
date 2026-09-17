@@ -17,6 +17,12 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
     public const string BucketEnvVar = "AGENTFOLIO_S3_BUCKET";
     public const string AccessKeyEnvVar = "AGENTFOLIO_S3_ACCESS_KEY";
     public const string SecretKeyEnvVar = "AGENTFOLIO_S3_SECRET_KEY";
+    /// <summary>
+    /// sigv4 scope region. Self-hosted stores REJECT the us-east-1 default
+    /// (garage: "Authorization header malformed, unexpected scope" — measured
+    /// live 2026-09-17); there is no correct guess, so it must be explicit.
+    /// </summary>
+    public const string RegionEnvVar = "AGENTFOLIO_S3_REGION";
 
     private readonly IAmazonS3 _client;
     private readonly string _bucket;
@@ -25,11 +31,12 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
         Environment.GetEnvironmentVariable(EndpointEnvVar),
         Environment.GetEnvironmentVariable(BucketEnvVar),
         Environment.GetEnvironmentVariable(AccessKeyEnvVar),
-        Environment.GetEnvironmentVariable(SecretKeyEnvVar))
+        Environment.GetEnvironmentVariable(SecretKeyEnvVar),
+        Environment.GetEnvironmentVariable(RegionEnvVar))
     {
     }
 
-    public S3ObjectStore(string? endpoint, string? bucket, string? accessKey, string? secretKey)
+    public S3ObjectStore(string? endpoint, string? bucket, string? accessKey, string? secretKey, string? region)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
             throw new InvalidOperationException(
@@ -44,6 +51,17 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
             ServiceURL = endpoint,
             ForcePathStyle = true, // MinIO-compatible path-style addressing
             UseHttp = endpoint.StartsWith("http://", StringComparison.Ordinal),
+            AuthenticationRegion = string.IsNullOrWhiteSpace(region)
+                ? throw new InvalidOperationException(
+                    $"Environment variable {RegionEnvVar} is not set. Self-hosted stores (garage/MinIO) reject the us-east-1 signing scope — set the store's own region (garage: s3_region from its config).")
+                : region,
+            // SDK v4's default integrity protection (CRC32 checksum + signed
+            // streaming trailer) is not implemented by garage/MinIO-class stores:
+            // every PUT dies "Bad request: Invalid payload signature" (measured
+            // live vs garage 2.1.0, 2026-09-17). WHEN_REQUIRED keeps integrity
+            // checks where the S3 API demands them and sends plain sigv4 payloads
+            // otherwise — accepted by self-hosted stores AND real AWS.
+            RequestChecksumCalculation = Amazon.Runtime.RequestChecksumCalculation.WHEN_REQUIRED,
         };
         _client = new AmazonS3Client(
             accessKey ?? throw new InvalidOperationException(
@@ -61,7 +79,10 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
             Key = key,
             InputStream = data,
             ContentType = contentType,
-            DisablePayloadSigning = true,
+            // Payload signing stays ENABLED: AWSSDK rejects DisablePayloadSigning
+            // over plain http:// ("must be sent over HTTPS"), which is how every
+            // homelab/tailnet S3 (garage/MinIO) endpoint ships. Measured live:
+            // first real garage deploy 500'd every upload until this was removed.
         }, ct);
     }
 
@@ -142,7 +163,7 @@ public sealed class S3ObjectStore : IObjectStore, IDisposable
                 Prefix = prefix,
                 ContinuationToken = token,
             }, ct);
-            keys.AddRange(resp.S3Objects.Select(o => o.Key));
+            keys.AddRange((resp.S3Objects ?? []).Select(o => o.Key));
             token = resp.NextContinuationToken;
         } while (token is not null);
         return keys;
