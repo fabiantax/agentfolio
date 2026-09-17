@@ -15,6 +15,7 @@ using Slices.Uploads;
 using AgentFolio.Platform.Storage;
 using Slices.Tenancy;
 using Slices.Share;
+using Slices.Stars;
 using AgentFolio.Platform.Migrations;
 using Microsoft.AspNetCore.HttpLogging;
 
@@ -49,6 +50,11 @@ if (args.Contains("--migrate-single-to-tenant"))
 
 // Chat: keyed 'nim' IChatClient (falls back inline when NIM env unset) + conversation store.
 builder.Services.AddNimChatClient();
+
+// Stars: GitHub stars client from AGENTFOLIO_GITHUB_TOKEN (scoped, overridable in tests).
+builder.Services.AddScoped<IGitHubStarsClient>(_ =>
+    new HttpGitHubStarsClient(Environment.GetEnvironmentVariable("AGENTFOLIO_GITHUB_TOKEN")
+        ?? throw new InvalidOperationException("AGENTFOLIO_GITHUB_TOKEN is not set.")));
 builder.Services.AddSingleton<IConversationStore>(_ =>
     new SqliteConversationStore(
         Environment.GetEnvironmentVariable("AGENTFOLIO_DB_PATH") ?? "agentfolio.db"));
@@ -207,6 +213,7 @@ app.MapGet("/weatherforecast", () =>
 app.MapGet("/", () => Results.Redirect("/share/showcase", permanent: false));
 
 app.MapChatApi();
+app.MapStarsApi();
 
 // Static UI: /web/* serves the built chat component + host demos (same origin as API).
 app.MapStaticAssets();

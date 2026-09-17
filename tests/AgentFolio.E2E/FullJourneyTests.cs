@@ -6,6 +6,7 @@ using System.Text;
 using AgentFolio.Contracts;
 using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
+using Slices.Stars;
 using Slices.Uploads;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.AI;
@@ -79,6 +80,9 @@ public class FullJourneyTests : IDisposable
                 // Fake ONLY the LLM (trust boundary) — keyed override like ChatTests.
                 services.RemoveAll<IChatClient>();
                 services.AddKeyedSingleton<IChatClient>("nim", new EchoCitingChatClient());
+                // Fake ONLY the GitHub HTTP (trust boundary) — stars sync journeys.
+                services.RemoveAll<IGitHubStarsClient>();
+                services.AddSingleton<IGitHubStarsClient>(new FakeE2EStarsClient());
             });
         });
     }
@@ -137,6 +141,20 @@ public class FullJourneyTests : IDisposable
         { Content = new MultipartFormDataContent { { new ByteArrayContent("x"u8.ToArray()), "file", "a.txt" } } };
         var anonUp = await anonUpClient.SendAsync(anonReq);
         Assert.Contains(anonUp.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.NotFound, HttpStatusCode.BadRequest });
+
+        // ---- 7. Stars sync (demo-critical, #41): fake GitHub HTTP at the trust
+        // boundary, real per-tenant shard store — showcase tenant gets the projections.
+        var sync = await client.PostAsync("/stars/sync", content: null);
+        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
+        var syncBody = await sync.Content.ReadAsStringAsync();
+        Assert.Contains("\"fetched\":2", syncBody);
+        Assert.Contains("\"upserted\":2", syncBody);
+
+        var starsList = await client.GetAsync("/stars");
+        Assert.Equal(HttpStatusCode.OK, starsList.StatusCode);
+        var starsJson = await starsList.Content.ReadAsStringAsync();
+        Assert.Contains("repo2", starsJson);
+        Assert.Contains("repo1", starsJson);
     }
 
     [Fact]
@@ -180,6 +198,17 @@ public class FullJourneyTests : IDisposable
     }
 
     private sealed record UploadReceiptDto(string Key, long Bytes, string ContentType, DateTimeOffset ExpiresAt);
+
+    /// <summary>Fake GitHub stars client: two deterministic starred repos.</summary>
+    private sealed class FakeE2EStarsClient : IGitHubStarsClient
+    {
+        public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<StarredRepoDto>>(new[]
+            {
+                new StarredRepoDto(1, "repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),
+                new StarredRepoDto(2, "repo2", "desc2", "https://github.com/2", 5, "Rust", new[] { "t2" }, "user2", "2024-06-01T00:00:00Z"),
+            });
+    }
 
     /// <summary>Fake chat model: streams tokens, done event carries a GitHub citation.</summary>
     private sealed class EchoCitingChatClient : IChatClient

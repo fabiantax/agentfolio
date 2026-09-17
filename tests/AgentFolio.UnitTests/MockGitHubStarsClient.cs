@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using AgentFolio.Slices.Stars;
+using Slices.Stars;
 
 namespace AgentFolio.UnitTests;
 

@@ -1,6 +1,6 @@
 using AgentFolio.Platform;
 using AgentFolio.Contracts;
-using AgentFolio.Slices.Stars;
+using Slices.Stars;
 using Microsoft.Extensions.Options;
 using Xunit;
 

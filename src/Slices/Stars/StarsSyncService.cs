@@ -1,4 +1,4 @@
-namespace AgentFolio.Slices.Stars;
+namespace Slices.Stars;
 
 using AgentFolio.Contracts;
 using System.Collections.Generic;

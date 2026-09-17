@@ -1,4 +1,4 @@
-namespace AgentFolio.Slices.Stars;
+namespace Slices.Stars;
 
 /// <summary>Interface for fetching GitHub starred repositories via HTTP.</summary>
 public interface IGitHubStarsClient

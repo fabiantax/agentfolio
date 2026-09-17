@@ -1,4 +1,4 @@
-namespace AgentFolio.Slices.Stars;
+namespace Slices.Stars;
 
 /// <summary>DTO for a GitHub starred repository.</summary>
 public sealed record StarredRepoDto(

@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\Slices\Auth2\Slices.Auth2.csproj" />
     <ProjectReference Include="..\..\src\Slices\Uploads\Slices.Uploads.csproj" />
     <ProjectReference Include="..\..\src\Slices\Share\Slices.Share.csproj" />
+    <ProjectReference Include="..\..\src\Slices\Stars\Slices.Stars.csproj" />
   </ItemGroup>
 
   <ItemGroup>

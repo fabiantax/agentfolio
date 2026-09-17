@@ -1,4 +1,4 @@
-namespace AgentFolio.Slices.Stars;
+namespace Slices.Stars;
 
 using System.Net.Http;
 using System.Net.Http.Headers;

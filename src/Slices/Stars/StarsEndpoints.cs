@@ -1,9 +1,11 @@
-namespace AgentFolio.Slices.Stars;
+namespace Slices.Stars;
 
 using AgentFolio.Contracts;
+using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -19,17 +21,47 @@ public static class StarsEndpoints
     /// </remarks>
     public static IEndpointRouteBuilder MapStarsApi(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/stars/sync", async (StarsSyncService service, CancellationToken ct) =>
+        app.MapPost("/stars/sync", async (HttpContext http, IServiceProvider sp, CancellationToken ct) =>
         {
+            IGitHubStarsClient starsClient;
+            try
+            {
+                starsClient = sp.GetRequiredService<IGitHubStarsClient>();
+            }
+            catch (InvalidOperationException)
+            {
+                // AGENTS.md rule 1: no silent fallback — name the missing dependency.
+                return Results.Json(new { error = "github_token_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var tid = await ResolveStarTenantIdAsync(http, ct);
+            if (tid is null)
+            {
+                return Results.Json(new { error = "tenancy_unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var shards = sp.GetRequiredService<TenantShardRegistry>();
+            var store = await shards.GetOrCreateShardAsync(tid, ct);
+
+            var service = new StarsSyncService(starsClient, store);
             var result = await service.SyncAsync(ct);
             return Results.Ok(result);
-        });
+        }).RequireAuthorization();
 
         // GET /stars?cursor=&limit= listing from IItemStore ordered by StarredAt desc
-        app.MapGet("/stars", async (IItemStore store, string cursor, int limit = 20) =>
+        app.MapGet("/stars", async (HttpContext http, IServiceProvider sp, string? cursor, int limit = 20, CancellationToken ct = default) =>
         {
+            var tid = await ResolveStarTenantIdAsync(http, ct);
+            if (tid is null)
+            {
+                return Results.Json(new { error = "tenancy_unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var shards = sp.GetRequiredService<TenantShardRegistry>();
+            var store = await shards.GetOrCreateShardAsync(tid, ct);
+
             var all = new List<AgentFolio.Contracts.StarredRepoRecord>();
-            await foreach (var s in store.QueryStarsAsync())
+            await foreach (var s in store.QueryStarsAsync(ct))
                 all.Add(s);
 
             // Order by StarredAt descending
@@ -44,15 +76,38 @@ public static class StarsEndpoints
             // Apply limit
             var page = ordered.Take(limit).ToList();
 
-            return page.Select(s => new
+            return Results.Ok(page.Select(s => new
             {
                 s.RepoId,
                 s.FullName,
                 s.Description,
                 s.StarredAt
-            });
-        });
+            }));
+        }).RequireAuthorization();
 
         return app;
+    }
+
+    /// <summary>
+    /// Tenant boundary is server-derived (AGENTS.md rule 4): tid claim first,
+    /// showcase fallback — a broken registry never 500s.
+    /// </summary>
+    private static async Task<string?> ResolveStarTenantIdAsync(HttpContext http, CancellationToken ct)
+    {
+        var tid = http.User.FindFirst("tid")?.Value;
+        if (string.IsNullOrEmpty(tid))
+        {
+            try
+            {
+                var registry = http.RequestServices.GetService<TenantRegistry>();
+                tid = registry is null ? null : (await registry.GetBySlugAsync("showcase", ct))?.TenantId;
+            }
+            catch
+            {
+                tid = null;
+            }
+        }
+
+        return string.IsNullOrEmpty(tid) ? null : tid;
     }
 }
