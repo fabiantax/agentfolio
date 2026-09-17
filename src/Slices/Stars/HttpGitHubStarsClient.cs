@@ -57,43 +57,7 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
             response.EnsureSuccessStatusCode();
 
             var body = await response.Content.ReadAsStringAsync(ct);
-            var doc = JsonDocument.Parse(body);
-
-            var items = doc.RootElement.EnumerateArray();
-
-            foreach (var item in items)
-            {
-                var repoItem = item.GetProperty("repository");
-                var repoId = repoItem.GetProperty("id").GetInt64();
-                var fullName = repoItem.GetProperty("full_name").GetString()!;
-                var name = repoItem.GetProperty("name").GetString()!;
-                var description = GetStringNull(repoItem, "description");
-                var htmlUrl = repoItem.GetProperty("html_url").GetString()!;
-                var starsCount = repoItem.GetProperty("stargazers_count").GetInt32();
-                var language = GetStringNull(repoItem, "language");
-                var ownerLogin = repoItem.GetProperty("owner").GetProperty("login").GetString()!;
-                var starredAt = item.GetProperty("starred_at").GetString()!;
-
-                var topics = new List<string>();
-                var topicsObj = repoItem.GetProperty("topics");
-                if (topicsObj.TryGetProperty("nodes", out var nodes))
-                {
-                    foreach (var node in nodes.EnumerateArray())
-                        topics.Add(node.GetString()!);
-                }
-
-                var dto = new StarredRepoDto(
-                    repoId,
-                    name,
-                    description,
-                    htmlUrl,
-                    starsCount,
-                    language,
-                    topics,
-                    ownerLogin,
-                    starredAt);
-                all.Add(dto);
-            }
+            all.AddRange(ParseStarredPage(body));
 
             // Parse Link header for pagination
             nextUrl = null;
@@ -113,6 +77,50 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
         }
 
         return all;
+    }
+
+    /// <summary>
+    /// Parses one page of GET /user/starred with Accept: application/vnd.github.star+json.
+    /// Live shape (measured 2026-09-17 against api.github.com): items are
+    /// { "starred_at": ..., "repo": {...} } — the wrapper key is "repo"; the
+    /// documented "repository" variant is accepted too. REST v3 "topics" is a
+    /// plain string array; the GraphQL-style { nodes: [...] } object is accepted
+    /// for robustness.
+    /// </summary>
+    public static IReadOnlyList<StarredRepoDto> ParseStarredPage(string jsonBody)
+    {
+        using var doc = JsonDocument.Parse(jsonBody);
+        var result = new List<StarredRepoDto>();
+        foreach (var item in doc.RootElement.EnumerateArray())
+        {
+            var repoItem = item.TryGetProperty("repository", out var repoProp)
+                ? repoProp
+                : item.GetProperty("repo");
+            var topics = new List<string>();
+            var topicsObj = repoItem.GetProperty("topics");
+            if (topicsObj.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var t in topicsObj.EnumerateArray())
+                    if (t.ValueKind == JsonValueKind.String) topics.Add(t.GetString()!);
+            }
+            else if (topicsObj.ValueKind == JsonValueKind.Object && topicsObj.TryGetProperty("nodes", out var nodes))
+            {
+                foreach (var node in nodes.EnumerateArray())
+                    topics.Add(node.GetString()!);
+            }
+
+            result.Add(new StarredRepoDto(
+                repoItem.GetProperty("id").GetInt64(),
+                repoItem.GetProperty("name").GetString()!,
+                GetStringNull(repoItem, "description"),
+                repoItem.GetProperty("html_url").GetString()!,
+                repoItem.GetProperty("stargazers_count").GetInt32(),
+                GetStringNull(repoItem, "language"),
+                topics,
+                repoItem.GetProperty("owner").GetProperty("login").GetString()!,
+                item.GetProperty("starred_at").GetString()!));
+        }
+        return result;
     }
 
     private static string? GetStringNull(JsonElement element, string propertyName)
