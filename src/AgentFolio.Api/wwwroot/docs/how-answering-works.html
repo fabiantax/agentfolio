@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How AgentFolio Answers — Microsoft Agent Framework Pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --af-bg:#0D1117; --af-surface:#151B23; --af-raised:#1C2430; --af-border:#2A3441;
+  --af-text:#E6EDF3; --af-text-2:#9BA8B7; --af-accent:#4C8DFF; --af-success:#3FB950;
+  --af-danger:#F85149; --af-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:0.9375rem/1.6 Inter,system-ui,sans-serif;background:var(--af-bg);color:var(--af-text);-webkit-font-smoothing:antialiased;padding:2.5rem 1.5rem}
+.wrap{max-width:1020px;margin:0 auto}
+.eyebrow{font:500 0.6875rem/1.4 var(--af-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--af-accent);margin-bottom:10px}
+h1{font-size:1.65rem;font-weight:700;letter-spacing:-.02em;line-height:1.15;margin-bottom:8px}
+.sub{color:var(--af-text-2);font-size:.9rem;margin-bottom:28px}
+.answer{background:var(--af-surface);border:1px solid var(--af-border);border-radius:14px;padding:20px 24px;margin-bottom:28px}
+.answer b{color:var(--af-success)}
+.answer code{font-family:var(--af-mono);font-size:.8rem;color:var(--af-accent);background:var(--af-raised);padding:1px 6px;border-radius:5px}
+h2{font-size:1.05rem;font-weight:600;margin:32px 0 4px}
+.h2sub{color:var(--af-text-2);font-size:.8125rem;margin-bottom:14px}
+.dg{background:rgba(21,27,35,.6);border:1px solid var(--af-border);border-radius:14px;padding:12px;overflow-x:auto;margin-bottom:10px}
+svg{width:100%;min-width:880px;display:block}
+.cap{font:400 .7rem/1.5 var(--af-mono);color:var(--af-text-2);margin:6px 4px 0}
+table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:6px}
+th{font:600 .66rem/1.4 var(--af-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--af-text-2);text-align:left;padding:8px 10px;border-bottom:1px solid var(--af-border)}
+td{padding:8px 10px;border-bottom:1px solid rgba(42,52,65,.5);vertical-align:top;color:var(--af-text)}
+td code{font-family:var(--af-mono);font-size:.72rem;color:var(--af-accent)}
+td.dim{color:var(--af-text-2)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px}
+.card{background:var(--af-surface);border:1px solid var(--af-border);border-radius:12px;padding:16px 18px}
+.card .n{font:600 1.5rem/1.2 var(--af-mono);color:var(--af-success)}
+.card .n.blue{color:var(--af-accent)}
+.card .l{font:500 .66rem/1.4 var(--af-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--af-text-2);margin-top:6px}
+.card .s{font-size:.72rem;color:var(--af-text-2);margin-top:4px}
+footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--af-border);color:var(--af-text-2);font-size:.72rem}
+footer a{color:var(--af-accent);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">AgentFolio — architecture note</div>
+  <h1>How AgentFolio answers: the Microsoft Agent Framework pipeline</h1>
+  <p class="sub">Every answer is streamed by a MAF agent over <code>Microsoft.Extensions.AI</code>, grounded in documents extracted by a process-isolated sandbox, and carries citations resolved server-side. This page documents the real path with file:line anchors and measured numbers.</p>
+
+  <div class="answer">
+    <b>Yes — answering runs on Microsoft Agent Framework.</b>
+    The chat endpoint builds a MAF <code>AIAgent</code> via <code>IChatClient.AsAIAgent(...)</code>
+    (<code>Microsoft.Agents.AI 1.21.0</code>), drives it with <code>CreateSessionAsync</code> /
+    <code>RunStreamingAsync</code>, and streams its tokens to the browser as SSE.
+    The underlying <code>IChatClient</code> is the canonical MAF wiring:
+    <code>OpenAIClient → GetChatClient(model).AsIChatClient()</code> pointed at any
+    OpenAI-compatible endpoint (live demo: llama-swap → nemotron-4b).
+  </div>
+
+  <h2>1 · End-to-end answering pipeline</h2>
+  <p class="h2sub">Two lanes: ingestion (upload → extract) happens once per document; answering assembles that context per question.</p>
+  <div class="dg">
+  <svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker>
+      <marker id="ahg" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#3FB950"/></marker>
+    </defs>
+    <!-- INGEST LANE -->
+    <text x="24" y="30" fill="#9BA8B7" font-size="10" font-weight="600" font-family="JetBrains Mono">INGEST (once per document)</text>
+    <rect x="24" y="46" width="130" height="58" rx="8" fill="#1C2430" stroke="#4C8DFF" stroke-width="1.5"/>
+    <text x="89" y="70" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">Upload</text>
+    <text x="89" y="86" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">POST /api/uploads</text>
+    <text x="89" y="97" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">magic-byte sniff</text>
+
+    <rect x="205" y="46" width="150" height="58" rx="8" fill="#1C2430" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="280" y="70" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">Garage S3</text>
+    <text x="280" y="86" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">tenants/{tid}/sessions/</text>
+    <text x="280" y="97" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">{sid}/{sha}.ext</text>
+
+    <rect x="406" y="46" width="170" height="58" rx="8" fill="#1C2430" stroke="#F85149" stroke-width="1.5"/>
+    <text x="491" y="66" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">Sandbox extractor</text>
+    <text x="491" y="81" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">SEPARATE process (untrusted</text>
+    <text x="491" y="92" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">bytes never touch API), 30s cap</text>
+
+    <rect x="627" y="46" width="150" height="58" rx="8" fill="#1C2430" stroke="#a78bfa" stroke-width="1.5"/>
+    <text x="702" y="70" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">Extracted text</text>
+    <text x="702" y="86" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">…/extracted/{sha}.txt</text>
+    <text x="702" y="97" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">leading Source: {url} line</text>
+
+    <line x1="154" y1="75" x2="203" y2="75" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="355" y1="75" x2="404" y2="75" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="576" y1="75" x2="625" y2="75" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+    <!-- ANSWER LANE -->
+    <text x="24" y="150" fill="#9BA8B7" font-size="10" font-weight="600" font-family="JetBrains Mono">ANSWER (per question)</text>
+    <rect x="24" y="166" width="130" height="64" rx="8" fill="#1C2430" stroke="#4C8DFF" stroke-width="1.5"/>
+    <text x="89" y="188" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">Browser</text>
+    <text x="89" y="203" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">&lt;agentfolio-chat&gt;</text>
+    <text x="89" y="214" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">chat-core web comp.</text>
+
+    <rect x="205" y="166" width="240" height="150" rx="10" fill="rgba(63,181,80,.08)" stroke="#3FB950" stroke-width="1.5"/>
+    <text x="325" y="188" fill="#E6EDF3" font-size="11.5" font-weight="700" text-anchor="middle" font-family="Inter">AgentFolio API — ChatEndpoints</text>
+    <text x="325" y="205" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">POST /chat (cookie auth, SSE out)</text>
+    <rect x="221" y="216" width="208" height="42" rx="6" fill="#151B23" stroke="#2A3441"/>
+    <text x="325" y="232" fill="#E6EDF3" font-size="9.5" font-weight="600" text-anchor="middle" font-family="Inter">1 · Context assembly</text>
+    <text x="325" y="246" fill="#9BA8B7" font-size="8" text-anchor="middle" font-family="JetBrains Mono">docs → [DOC n] labels, Source: → url</text>
+    <rect x="221" y="264" width="208" height="42" rx="6" fill="#151B23" stroke="#2A3441"/>
+    <text x="325" y="280" fill="#E6EDF3" font-size="9.5" font-weight="600" text-anchor="middle" font-family="Inter">3 · Citation resolution</text>
+    <text x="325" y="294" fill="#9BA8B7" font-size="8" text-anchor="middle" font-family="JetBrains Mono">[DOC n] → ChatCitation(url,title,snippet)</text>
+
+    <rect x="500" y="166" width="200" height="86" rx="10" fill="rgba(76,141,255,.1)" stroke="#4C8DFF" stroke-width="1.5"/>
+    <text x="600" y="188" fill="#E6EDF3" font-size="11.5" font-weight="700" text-anchor="middle" font-family="Inter">2 · MAF agent</text>
+    <text x="600" y="204" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">PortfolioAgentFactory.Create</text>
+    <text x="600" y="216" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">AIAgent.RunStreamingAsync</text>
+    <text x="600" y="231" fill="#4C8DFF" font-size="8" text-anchor="middle" font-family="JetBrains Mono">Microsoft.Agents.AI 1.21.0</text>
+
+    <rect x="500" y="286" width="200" height="64" rx="10" fill="#1C2430" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="600" y="308" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">IChatClient → model server</text>
+    <text x="600" y="323" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">keyed 'nim': OpenAI-compatible</text>
+    <text x="600" y="334" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">live: llama-swap :8007 / nemotron-4b</text>
+
+    <rect x="756" y="166" width="200" height="64" rx="8" fill="#1C2430" stroke="#4C8DFF" stroke-width="1.5"/>
+    <text x="856" y="188" fill="#E6EDF3" font-size="11" font-weight="600" text-anchor="middle" font-family="Inter">SSE stream to browser</text>
+    <text x="856" y="203" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">ChatTokenEvent (markers stripped)</text>
+    <text x="856" y="214" fill="#9BA8B7" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">ChatCompletionEvent(citations) [DONE]</text>
+
+    <line x1="154" y1="198" x2="203" y2="198" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+    <text x="178" y="190" fill="#9BA8B7" font-size="8" text-anchor="middle" font-family="JetBrains Mono">question</text>
+    <path d="M 445 237 L 498 237" fill="none" stroke="#3FB950" stroke-width="1.5" marker-end="url(#ahg)"/>
+    <line x1="600" y1="252" x2="600" y2="284" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah)"/>
+    <line x1="700" y1="318" x2="740" y2="270" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3"/>
+    <path d="M 700 209 Q 730 209 754 200" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah)"/>
+    <path d="M 702 75 Q 730 120 340 164" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-dasharray="4,4"/>
+    <text x="640" y="132" fill="#a78bfa" font-size="8" font-family="JetBrains Mono">ListByPrefixAsync → context docs</text>
+    <path d="M 445 285 Q 800 360 852 232" fill="none" stroke="#3FB950" stroke-width="1.2" stroke-dasharray="4,4"/>
+    <text x="660" y="352" fill="#3FB950" font-size="8" font-family="JetBrains Mono">completion + citations</text>
+
+    <!-- FAILURE POSTURE -->
+    <rect x="24" y="392" width="932" height="58" rx="10" fill="rgba(248,81,73,.06)" stroke="#F85149" stroke-width="1" stroke-dasharray="5,4"/>
+    <text x="44" y="414" fill="#F85149" font-size="9.5" font-weight="600" font-family="JetBrains Mono">NO-FALLBACK POSTURE (constitution §2/§3, AGENTS.md rule 1)</text>
+    <text x="44" y="430" fill="#9BA8B7" font-size="9" font-family="JetBrains Mono">NIM unset → 503 nim_not_configured · retrieval empty → the answer SAYS so · no echo, no fake data, no silent stand-ins</text>
+    <text x="44" y="442" fill="#9BA8B7" font-size="9" font-family="JetBrains Mono">stars sync token unset → 503 github_token_not_configured (wired per issue #41)</text>
+  </svg>
+  </div>
+  <p class="cap">Solid arrows = request flow · dashed = data used · green = MAF agent boundary</p>
+
+  <h2>2 · The MAF wiring, zoomed</h2>
+  <p class="h2sub">Exactly the canonical Microsoft Agent Factory composition — every swappable seam is keyed DI + env config.</p>
+  <div class="dg">
+  <svg viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg">
+    <defs><marker id="ah2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker></defs>
+    <rect x="24" y="24" width="280" height="120" rx="10" fill="rgba(76,141,255,.1)" stroke="#4C8DFF" stroke-width="1.5"/>
+    <text x="164" y="46" fill="#E6EDF3" font-size="11.5" font-weight="700" text-anchor="middle" font-family="Inter">NimChatClientFactory</text>
+    <text x="164" y="66" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">new OpenAIClient(ApiKeyCredential, opts)</text>
+    <text x="164" y="80" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">.GetChatClient(NIM_MODEL)</text>
+    <text x="164" y="94" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">.AsIChatClient()</text>
+    <text x="164" y="116" fill="#4C8DFF" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">registered: AddKeyedSingleton&lt;IChatClient&gt;("nim")</text>
+    <text x="164" y="130" fill="#4C8DFF" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">NIM_BASE_URL / NIM_API_KEY / NIM_MODEL env-only</text>
+
+    <rect x="356" y="24" width="280" height="120" rx="10" fill="rgba(63,181,80,.08)" stroke="#3FB950" stroke-width="1.5"/>
+    <text x="496" y="46" fill="#E6EDF3" font-size="11.5" font-weight="700" text-anchor="middle" font-family="Inter">PortfolioAgentFactory</text>
+    <text x="496" y="66" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">client.AsAIAgent(instructions, name,</text>
+    <text x="496" y="80" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">  description, tools)</text>
+    <text x="496" y="102" fill="#3FB950" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">AIAgent — Microsoft.Agents.AI 1.21.0</text>
+    <text x="496" y="116" fill="#3FB950" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">instructions: "Cite source url for every</text>
+    <text x="496" y="130" fill="#3FB950" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">factual claim; if empty, say so"</text>
+
+    <rect x="688" y="24" width="268" height="120" rx="10" fill="#1C2430" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="822" y="46" fill="#E6EDF3" font-size="11.5" font-weight="700" text-anchor="middle" font-family="Inter">Chat drive loop</text>
+    <text x="822" y="66" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">session = agent.CreateSessionAsync()</text>
+    <text x="822" y="80" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">await foreach (u in agent.RunStreamingAsync(</text>
+    <text x="822" y="94" fill="#9BA8B7" font-size="9" text-anchor="middle" font-family="JetBrains Mono">  message, session)) → SSE tokens</text>
+    <text x="822" y="116" fill="#fbbf24" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">tier: ChatTierSelector — ServerNim /</text>
+    <text x="822" y="130" fill="#fbbf24" font-size="8.5" text-anchor="middle" font-family="JetBrains Mono">browser LFM2-350M (WebGPU, private)</text>
+
+    <line x1="304" y1="84" x2="354" y2="84" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah2)"/>
+    <line x1="636" y1="84" x2="686" y2="84" stroke="#64748b" stroke-width="1.5" marker-end="url(#ah2)"/>
+
+    <rect x="24" y="180" width="932" height="86" rx="10" fill="#151B23" stroke="#2A3441" stroke-width="1"/>
+    <text x="44" y="204" fill="#9BA8B7" font-size="9.5" font-weight="600" font-family="JetBrains Mono">PINNED PACKAGES (Directory.Packages.props)</text>
+    <text x="44" y="222" fill="#E6EDF3" font-size="9.5" font-family="JetBrains Mono">Microsoft.Agents.AI 1.21.0 · Microsoft.Extensions.AI 10.10.0 · Microsoft.Extensions.AI.OpenAI 10.10.0</text>
+    <text x="44" y="240" fill="#9BA8B7" font-size="9" font-family="JetBrains Mono">tiering: same IChatClient seam serves the browser-tier (transformers.js WebGPU) and the server tier —</text>
+    <text x="44" y="254" fill="#9BA8B7" font-size="9" font-family="JetBrains Mono">one agent brain, two execution planes (spec 001; ADR-0003)</text>
+  </svg>
+  </div>
+
+  <h2>3 · Evidence — every claim, anchored</h2>
+  <table>
+    <tr><th>Claim</th><th>Anchor</th><th>Verified how</th></tr>
+    <tr><td>Agent built via MAF <code>AsAIAgent</code></td><td><code>src/AgentFolio.Agents/PortfolioAgentFactory.cs:24-31</code></td><td class="dim">code read + builds with pinned MAF 1.21.0</td></tr>
+    <tr><td>Streaming loop is MAF <code>RunStreamingAsync</code></td><td><code>src/Slices/Chat/ChatEndpoints.cs:117-124</code></td><td class="dim">live: SSE token events observed on :8190</td></tr>
+    <tr><td>IChatClient = OpenAI-compatible keyed 'nim'</td><td><code>src/AgentFolio.Agents/NimChatClientFactory.cs:21-49</code></td><td class="dim">live: tier "ServerNim" in completion event</td></tr>
+    <tr><td>Citations resolved from [DOC n] markers</td><td><code>src/Slices/Chat/ChatEndpoints.cs:126-140</code></td><td class="dim">live: citation JSON w/ ms-learn url + snippet</td></tr>
+    <tr><td>Doc context from extracted S3 objects</td><td><code>src/Slices/Chat/ChatEndpoints.cs:81-114</code></td><td class="dim">live: 10 objects in garage bucket</td></tr>
+    <tr><td>Extraction is process-isolated</td><td><code>src/Slices/Uploads/ExtractionService.cs:18-30</code></td><td class="dim">separate extractor exe, argv paths only</td></tr>
+    <tr><td>No-fallback on missing model config</td><td><code>src/Slices/Chat/ChatEndpoints.cs:26-35</code></td><td class="dim">503 nim_not_configured test + AGENTS rule 1</td></tr>
+    <tr><td>Architecture cross-checked vs code graph</td><td><code>atlas scan . → graphfusion-query</code> (2026-09-17)</td><td class="dim">edges verified: ChatEndpoints→AgentFolio.Agents ✓ · ChatEndpoints→AgentFolio.Platform ✓ · Api/Program.cs→Slices.Stars ✓ (PR #50) · Chat→Uploads direct refs = 0 ✓ (slice isolation) · Contracts refs all intra-Contracts ✓ (purity). External SDK symbols (AsAIAgent, RunStreamingAsync) are not repo-graph nodes by construction — verified by file read + package pins instead.</td></tr>
+  </table>
+
+  <h2>4 · Measured, not promised</h2>
+  <div class="cards">
+    <div class="card"><div class="n">85%</div><div class="l">citation exactness</div><div class="s">0% → 85% (17/20) after snippet-citation PR #47 · eval set v1, frozen</div></div>
+    <div class="card"><div class="n">4344 ms</div><div class="l">p50 answer latency</div><div class="s">6616 → 4344 ms on the same 20-question run (nemotron-4b via llama-swap)</div></div>
+    <div class="card"><div class="n blue">107/107</div><div class="l">tests green</div><div class="s">105 unit + 2 E2E · build 0 warnings · arch-gate 4/4 (this session)</div></div>
+    <div class="card"><div class="n blue">105</div><div class="l">unit tests</div><div class="s">includes citation parsing, tier selection, isolation matrix</div></div>
+  </div>
+
+  <footer>
+    AgentFolio · live demo http://100.112.37.119:8190 (password: test) · repo http://100.112.37.119:3200/fabiantax/agentfolio ·
+    eval harness: <code>dotnet run --project tools/AgentFolio.Eval -- --set eval/sets/v1.json</code> ·
+    generated 2026-09-17 from main @ 2b86f87 + storage-fix PR #49 · numbers from eval/results/v2-citations.md and this session's live run.
+  </footer>
+</div>
+</body>
+</html>
