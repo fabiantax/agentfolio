@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches: [main]
@@ -7,18 +6,69 @@ on:
 
 jobs:
   build-test:
+    # k8s lane: the ci-k8s runner label is registered HOST-mode
+    # (runner-config ConfigMap: `ci-k8s:host`) — steps run directly in the
+    # runner pod, and a `container:` key is fatal there: the host executor
+    # tries to start the job container via docker.sock, which the pod does
+    # not have (runs #50-54 all died at Checkout exactly this way, incl. on
+    # main). SDK comes from setup-dotnet per-run instead (same pattern as
+    # the working aliestax setup-node lane; egress + runner cache OK).
     runs-on: ci-k8s
-    container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install libicu (runner image lacks it; dotnet FailFasts without)
+        run: dnf install -y libicu >/dev/null 2>&1 || dnf install -y libicu-*
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: SDK sanity
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet --version
+
       - name: Restore
-        run: dotnet restore
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet restore
 
       - name: Build (warnaserror)
-        run: dotnet build -warnaserror --no-restore
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet build -warnaserror --no-restore
 
-      - name: Test
-        run: dotnet test --no-build --verbosity minimal
+      - name: Test (with coverage)
+        run: |
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet test --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.4 || true
+          REPORTGEN="$HOME/.dotnet/tools/reportgenerator"
+          if [ -x "$REPORTGEN" ]; then
+            "$REPORTGEN" -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:cover-report -reporttypes:TextSummary
+            echo "=== LINE/BRANCH COVERAGE ==="
+            grep -E "Line coverage|Branch coverage|Method coverage" cover-report/Summary.txt || true
+          else
+            python3 -c "import glob,xml.etree.ElementTree as ET; [print('coverage: line', round(float(ET.parse(f).getroot().get('line-rate'))*100,1), '% branch', round(float(ET.parse(f).getroot().get('branch-rate'))*100,1), '%', f) for f in glob.glob('TestResults/**/coverage.cobertura.xml', recursive=True)]"
+          fi
+
+      - name: Clean-architecture gate (Atlas)
+        run: |
+          # atlas binary is host-only (285MB) — not present in the SDK container.
+          # Loud skip (never silently green); gate runs parent-side on every PR.
+          if ! command -v atlas >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/atlas" ]; then
+            echo "::warning::atlas not present in CI container — arch-gate SKIPPED here; enforced parent-side per-PR"
+            exit 0
+          fi
+          ./scripts/arch-gate.sh
+
+# 2026-09-18 relesson (af-03 follow-up): a container:-key workflow (runs 31518/31519) is fatal on
+# the strix-host systemd runner too — it has no docker.sock either (docker inactive). The SDK the
+# container image would provide comes from setup-dotnet (10.0.x) instead; same major version.
