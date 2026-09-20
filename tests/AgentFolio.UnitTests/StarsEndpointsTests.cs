@@ -13,6 +13,7 @@ using Xunit;
 
 namespace AgentFolio.UnitTests;
 
+[Collection("password-hash-env")]
 public sealed class StarsEndpointsTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"agentfolio-stars-ep-test-{Guid.NewGuid():N}.db");
@@ -31,8 +32,8 @@ public sealed class StarsEndpointsTests : IDisposable
     {
         fake.AddPage(new[]
         {
-            new StarredRepoDto(1, "repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),
-            new StarredRepoDto(2, "repo2", "desc2", "https://github.com/2", 5, "Rust", new[] { "t2" }, "user2", "2024-06-01T00:00:00Z"),
+            new StarredRepoDto(1, "repo1", "user1/repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),
+            new StarredRepoDto(2, "repo2", "user2/repo2", "desc2", "https://github.com/2", 5, "Rust", new[] { "t2" }, "user2", "2024-06-01T00:00:00Z"),
         });
     }
 
@@ -120,10 +121,49 @@ public sealed class StarsEndpointsTests : IDisposable
 
         var stars = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(2, stars.GetArrayLength());
-        var first = stars[0];
-        Assert.Equal("repo2", first.GetProperty("fullName").GetString());
-        Assert.Equal(2, first.GetProperty("repoId").GetInt64());
-        var second = stars[1];
-        Assert.Equal("repo1", second.GetProperty("fullName").GetString());
+        var firstStar = stars[0];
+        Assert.Equal("user2/repo2", firstStar.GetProperty("fullName").GetString());
+        Assert.Equal(2, firstStar.GetProperty("repoId").GetInt64());
+        var secondStar = stars[1];
+        Assert.Equal("user1/repo1", secondStar.GetProperty("fullName").GetString());
+    }
+
+    [Fact]
+    public async Task PostStarsSync_SecondSyncWithinTtl_HitsCacheWithoutRefetch()
+    {
+        var fake = new MockGitHubStarsClient();
+        AddFakeStarsPage(fake);
+        await using var factory = Factory(fake);
+        var client = LoggedInClient(factory);
+
+        var first = await client.PostAsync("/stars/sync", content: null);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var firstBody = await first.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("github", firstBody.GetProperty("source").GetString());
+        Assert.True(firstBody.GetProperty("cacheWritten").GetBoolean());
+
+        var second = await client.PostAsync("/stars/sync", content: null);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        var secondBody = await second.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("cache", secondBody.GetProperty("source").GetString());
+        Assert.Equal(0, secondBody.GetProperty("fetched").GetInt32());
+        Assert.Equal(2, secondBody.GetProperty("unchanged").GetInt32());
+    }
+
+    [Fact]
+    public async Task PostStarsSync_ForceBypassesCacheAndRefetches()
+    {
+        var fake = new MockGitHubStarsClient();
+        AddFakeStarsPage(fake);
+        await using var factory = Factory(fake);
+        var client = LoggedInClient(factory);
+
+        await client.PostAsync("/stars/sync", content: null); // prime the snapshot
+
+        var forced = await client.PostAsync("/stars/sync?force=1", content: null);
+        Assert.Equal(HttpStatusCode.OK, forced.StatusCode);
+        var body = await forced.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("github", body.GetProperty("source").GetString());
+        Assert.Equal(2, body.GetProperty("fetched").GetInt32());
     }
 }

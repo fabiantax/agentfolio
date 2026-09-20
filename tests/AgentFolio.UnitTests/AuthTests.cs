@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using AgentFolio.Platform.Auth;
 using Microsoft.AspNetCore.Mvc.Testing;
 
+[Collection("password-hash-env")]
 public class AuthTests
 {
     // ---------- Argon2 hash/verify roundtrip ----------

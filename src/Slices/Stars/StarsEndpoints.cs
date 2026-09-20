@@ -1,6 +1,7 @@
 namespace Slices.Stars;
 
 using AgentFolio.Contracts;
+using System.Text;
 using AgentFolio.Platform.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -42,10 +43,71 @@ public static class StarsEndpoints
 
             var shards = sp.GetRequiredService<TenantShardRegistry>();
             var store = await shards.GetOrCreateShardAsync(tid, ct);
+            var objectStore = sp.GetService<AgentFolio.Platform.Storage.IObjectStore>();
+            var snapshotKey = StarsSnapshot.KeyFor(tid);
+
+            var force = http.Request.Query["force"].ToString() is "1" or "true";
+            var maxAgeMinutes = int.TryParse(http.Request.Query["maxAgeMinutes"], out var m) && m > 0 ? m : 360;
+
+            // Freshness pre-check against the object-storage snapshot. This is an
+            // EXPLICIT cache, not a fallback: only a fresh, non-empty snapshot skips
+            // the GitHub fetch; anything else (absent, stale, unreadable) fetches
+            // for real.
+            if (!force && objectStore is not null)
+            {
+                try
+                {
+                    await using var snapStream = await objectStore.GetAsync(snapshotKey, ct);
+                    if (snapStream is not null)
+                    {
+                        using var reader = new StreamReader(snapStream);
+                        var snapshot = StarsSnapshot.Deserialize(await reader.ReadToEndAsync(ct));
+                        if (snapshot is { Repos.Count: > 0 }
+                            && DateTimeOffset.UtcNow - snapshot.SyncedAt < TimeSpan.FromMinutes(maxAgeMinutes))
+                        {
+                            return Results.Ok(new
+                            {
+                                fetched = 0,
+                                upserted = 0,
+                                unchanged = snapshot.Repos.Count,
+                                source = "cache",
+                                syncedAt = snapshot.SyncedAt,
+                                maxAgeMinutes
+                            });
+                        }
+                    }
+                }
+                catch
+                {
+                    // Unreadable cache is not a dependency failure — fetch for real.
+                }
+            }
 
             var service = new StarsSyncService(starsClient, store);
-            var result = await service.SyncAsync(ct);
-            return Results.Ok(result);
+            StarsSyncResult result;
+            var cacheWritten = false;
+            if (objectStore is not null)
+            {
+                result = await service.SyncAsync(ct, async (repos, token) =>
+                {
+                    var payload = new StarsSnapshot(DateTimeOffset.UtcNow, repos).Serialize();
+                    await objectStore.PutAsync(snapshotKey, new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)), "application/json", token);
+                    cacheWritten = true;
+                });
+            }
+            else
+            {
+                result = await service.SyncAsync(ct);
+            }
+
+            return Results.Ok(new
+            {
+                result.Fetched,
+                result.Upserted,
+                result.Unchanged,
+                source = "github",
+                cacheWritten
+            });
         }).RequireAuthorization();
 
         // GET /stars?cursor=&limit= listing from IItemStore ordered by StarredAt desc

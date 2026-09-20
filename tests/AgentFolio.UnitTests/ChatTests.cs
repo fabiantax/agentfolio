@@ -16,6 +16,7 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace AgentFolio.UnitTests;
 
+[Collection("password-hash-env")]
 public class ChatTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"agentfolio-chat-test-{Guid.NewGuid():N}.db");

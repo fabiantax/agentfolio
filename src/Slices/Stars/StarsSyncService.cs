@@ -22,9 +22,12 @@ public sealed class StarsSyncService
 
     /// <summary>
     /// Fetches all starred repos, appends StarsSynced events, and upserts projections.
-    /// Returns count of fetched, upserted, and unchanged repos.
+    /// Returns count of fetched, upserted, and unchanged repos. When
+    /// <paramref name="snapshotSink"/> is provided it receives the full-fidelity
+    /// DTO list after a successful sync (write-through cache hook).
     /// </summary>
-    public async Task<StarsSyncResult> SyncAsync(CancellationToken ct = default)
+    public async Task<StarsSyncResult> SyncAsync(CancellationToken ct = default,
+        Func<IReadOnlyList<StarredRepoDto>, CancellationToken, Task>? snapshotSink = null)
     {
         var starredDtos = await _starsClient.GetAllStarredAsync(ct).ConfigureAwait(false);
 
@@ -50,7 +53,7 @@ public sealed class StarsSyncService
         foreach (var dto in grouped.Values)
         {
             if (existingById.TryGetValue(dto.RepoId, out var existing)
-                && existing.FullName == dto.Name
+                && existing.FullName == dto.FullName
                 && existing.Description == dto.Description
                 && existing.StarredAt == DateTimeOffset.Parse(dto.StarredAtIso))
             {
@@ -61,13 +64,18 @@ public sealed class StarsSyncService
             // Append event then upsert projection in one transaction
             await _itemStore.UpsertStarAsync(new StarredRepoRecord(
                 dto.RepoId,
-                dto.Name,
+                dto.FullName,
                 dto.Description,
                 SerializeTopics(dto.Topics),
                 DateTimeOffset.Parse(dto.StarredAtIso)), ct);
 
             upserted++;
         }
+
+        // Write-through cache hook (optional): the full-fidelity DTO list exists
+        // only here — the shard projection keeps a reduced shape.
+        if (snapshotSink is not null)
+            await snapshotSink(starredDtos, ct);
 
         return new StarsSyncResult(fetched, upserted, unchanged);
     }

@@ -32,32 +32,51 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
     {
         var all = new List<StarredRepoDto>();
         string? nextUrl = "https://api.github.com/user/starred?per_page=100";
+        var attempt = 0;
 
         while (nextUrl != null)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, nextUrl);
-            var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, nextUrl);
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
 
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
                 (int)response.StatusCode == 429)
             {
+                // Rate limit / secondary limit backoff. Measured live 2026-09-17:
+                // a 403 WITHOUT X-RateLimit-Reset used to `continue` with NO delay —
+                // an infinite hot retry loop that never completes and never counts
+                // against the core quota (403s are unmetered), so it is invisible
+                // in /rate_limit. Always wait, honor Retry-After / reset headers
+                // when present, and give up loudly after a bounded number of tries.
+                attempt++;
+                if (attempt > 5)
+                    throw new InvalidOperationException(
+                        $"github_rate_limited: {nextUrl} still {(int)response.StatusCode} after {attempt - 1} backoff retries");
+
+                var delay = TimeSpan.FromSeconds(5);
                 var resetStr = response.Headers?.GetValues("X-RateLimit-Reset")?.FirstOrDefault();
                 if (long.TryParse(resetStr, out var resetUnix))
                 {
                     var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    var waitSecs = Math.Max(1, (resetUnix - now) + 1);
-                    var maxWait = 600; // 10 min cap
-                    if (waitSecs > maxWait) waitSecs = maxWait;
-                    await Task.Delay(TimeSpan.FromSeconds(waitSecs), ct).ConfigureAwait(false);
+                    var waitSecs = Math.Max(5, (resetUnix - now) + 1);
+                    delay = TimeSpan.FromSeconds(Math.Min(waitSecs, 120)); // cap 2 min per wait
                 }
-                // Retry the same URL
+                if (response.Headers?.RetryAfter?.Delta is { } delta)
+                    delay = TimeSpan.FromSeconds(Math.Max(delay.TotalSeconds, Math.Min(delta.TotalSeconds, 120)));
+
+                await Task.Delay(delay, ct).ConfigureAwait(false);
                 continue;
             }
 
+            attempt = 0;
             response.EnsureSuccessStatusCode();
 
             var body = await response.Content.ReadAsStringAsync(ct);
             all.AddRange(ParseStarredPage(body));
+
+            // Pace pagination: rapid back-to-back page fetches trip GitHub's
+            // secondary rate limits (measured: ~30 pages in, then 403 storm).
+            await Task.Delay(TimeSpan.FromMilliseconds(400), ct).ConfigureAwait(false);
 
             // Parse Link header for pagination
             nextUrl = null;
@@ -112,6 +131,7 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
             result.Add(new StarredRepoDto(
                 repoItem.GetProperty("id").GetInt64(),
                 repoItem.GetProperty("name").GetString()!,
+                repoItem.GetProperty("full_name").GetString()!,
                 GetStringNull(repoItem, "description"),
                 repoItem.GetProperty("html_url").GetString()!,
                 repoItem.GetProperty("stargazers_count").GetInt32(),

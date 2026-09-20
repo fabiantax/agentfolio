@@ -4,6 +4,7 @@ namespace Slices.Stars;
 public sealed record StarredRepoDto(
     long RepoId,
     string Name,
+    string FullName,
     string? Description,
     string HtmlUrl,
     int Stars,

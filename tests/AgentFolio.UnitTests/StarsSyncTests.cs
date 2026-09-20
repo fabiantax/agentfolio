@@ -35,7 +35,7 @@ public sealed class StarsSyncTests : IDisposable
             var items = new List<StarredRepoDto>();
             for (var i = page * 34; i < (page + 1) * 34; i++)
             {
-                items.Add(new StarredRepoDto(i, $"repo{i}", $"desc{i}", $"https://github.com/{i}", 10, "C#",
+                items.Add(new StarredRepoDto(i, $"repo{i}", $"user{i}/repo{i}", $"desc{i}", $"https://github.com/{i}", 10, "C#",
                     new[] { "top1" }, "user", "2024-01-01T00:00:00Z"));
             }
             _fakeClient.AddPage(items);
@@ -67,7 +67,7 @@ public sealed class StarsSyncTests : IDisposable
         // Arrange: first sync
         _fakeClient.AddPage(new[]
         {
-            new StarredRepoDto(1, "repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "top1" }, "user1", "2024-01-01T00:00:00Z"),
+            new StarredRepoDto(1, "repo1", "user1/repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "top1" }, "user1", "2024-01-01T00:00:00Z"),
         });
 
         await _store.OpenAsync();
@@ -92,7 +92,7 @@ public sealed class StarsSyncTests : IDisposable
         _fakeClient.AddPageWithRateLimit(
             new[]
             {
-                new StarredRepoDto(1, "repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "top1" }, "user1", "2024-01-01T00:00:00Z"),
+                new StarredRepoDto(1, "repo1", "user1/repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "top1" }, "user1", "2024-01-01T00:00:00Z"),
             },
             resetOffsetSeconds: -10 // simulate rate limit 10s ago, should wait ~11s
         );

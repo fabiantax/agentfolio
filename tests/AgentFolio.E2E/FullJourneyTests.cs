@@ -205,8 +205,8 @@ public class FullJourneyTests : IDisposable
         public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<StarredRepoDto>>(new[]
             {
-                new StarredRepoDto(1, "repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),
-                new StarredRepoDto(2, "repo2", "desc2", "https://github.com/2", 5, "Rust", new[] { "t2" }, "user2", "2024-06-01T00:00:00Z"),
+                new StarredRepoDto(1, "repo1", "user1/repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),
+                new StarredRepoDto(2, "repo2", "user2/repo2", "desc2", "https://github.com/2", 5, "Rust", new[] { "t2" }, "user2", "2024-06-01T00:00:00Z"),
             });
     }
 
