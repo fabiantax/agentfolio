@@ -23,6 +23,12 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
         {
             BaseAddress = new Uri("https://api.github.com/"),
         };
+        // Measured 2026-09-20: a single starred page (100 items, ~660 KB gz) can take
+        // >100 s on GitHub's side; the HttpClient default of 100 s aborted a 46-minute
+        // full sync mid-pagination (TaskCanceledException). Pages may be slow; they are
+        // never silently wrong — so allow a long single-page ceiling and rely on the
+        // bounded per-page retries below for genuine stalls.
+        _http.Timeout = TimeSpan.FromMinutes(10);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("AgentFolio/1.0");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.star+json");
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
@@ -32,46 +38,72 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
     {
         var all = new List<StarredRepoDto>();
         string? nextUrl = "https://api.github.com/user/starred?per_page=100";
-        var attempt = 0;
 
         while (nextUrl != null)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, nextUrl);
-            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
-                (int)response.StatusCode == 429)
+            // Per-page fetch with bounded retry on ANY transient failure.
+            // Measured live 2026-09-20: a 1000+ page fetch over ~45 min WILL hit
+            // transient transport errors, and each one discarded the ENTIRE fetch:
+            //   run 1 — HttpClient.Timeout (100 s default) killed page N at 46 min
+            //   run 2 — HttpIOException "response ended prematurely" at ~20 min
+            // Retry the SAME page on any of: timeout, connection reset/truncation,
+            // HTTP-level failure — bounded, with escalating backoff.
+            var pageAttempt = 0;
+            string? body = null;
+            string? linkHeader = null;
+            while (body is null)
             {
-                // Rate limit / secondary limit backoff. Measured live 2026-09-17:
-                // a 403 WITHOUT X-RateLimit-Reset used to `continue` with NO delay —
-                // an infinite hot retry loop that never completes and never counts
-                // against the core quota (403s are unmetered), so it is invisible
-                // in /rate_limit. Always wait, honor Retry-After / reset headers
-                // when present, and give up loudly after a bounded number of tries.
-                attempt++;
-                if (attempt > 5)
-                    throw new InvalidOperationException(
-                        $"github_rate_limited: {nextUrl} still {(int)response.StatusCode} after {attempt - 1} backoff retries");
-
-                var delay = TimeSpan.FromSeconds(5);
-                var resetStr = response.Headers?.GetValues("X-RateLimit-Reset")?.FirstOrDefault();
-                if (long.TryParse(resetStr, out var resetUnix))
+                try
                 {
-                    var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    var waitSecs = Math.Max(5, (resetUnix - now) + 1);
-                    delay = TimeSpan.FromSeconds(Math.Min(waitSecs, 120)); // cap 2 min per wait
-                }
-                if (response.Headers?.RetryAfter?.Delta is { } delta)
-                    delay = TimeSpan.FromSeconds(Math.Max(delay.TotalSeconds, Math.Min(delta.TotalSeconds, 120)));
+                    using var request = new HttpRequestMessage(HttpMethod.Get, nextUrl);
+                    using var resp = await _http.SendAsync(request, ct).ConfigureAwait(false);
 
-                await Task.Delay(delay, ct).ConfigureAwait(false);
-                continue;
+                    if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                        (int)resp.StatusCode == 429)
+                    {
+                        // Rate limit / secondary limit backoff. Measured live 2026-09-17:
+                        // a 403 WITHOUT X-RateLimit-Reset used to `continue` with NO delay —
+                        // an infinite hot retry loop that never completes and never counts
+                        // against the core quota (403s are unmetered), so it is invisible
+                        // in /rate_limit. Always wait, honor Retry-After / reset headers
+                        // when present, and give up loudly after a bounded number of tries.
+                        pageAttempt++;
+                        if (pageAttempt > 5)
+                            throw new InvalidOperationException(
+                                $"github_rate_limited: {nextUrl} still {(int)resp.StatusCode} after {pageAttempt - 1} backoff retries");
+
+                        var delay = TimeSpan.FromSeconds(5);
+                        var resetStr = resp.Headers?.GetValues("X-RateLimit-Reset")?.FirstOrDefault();
+                        if (long.TryParse(resetStr, out var resetUnix))
+                        {
+                            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                            var waitSecs = Math.Max(5, (resetUnix - now) + 1);
+                            delay = TimeSpan.FromSeconds(Math.Min(waitSecs, 120)); // cap 2 min per wait
+                        }
+                        if (resp.Headers?.RetryAfter?.Delta is { } delta)
+                            delay = TimeSpan.FromSeconds(Math.Max(delay.TotalSeconds, Math.Min(delta.TotalSeconds, 120)));
+
+                        await Task.Delay(delay, ct).ConfigureAwait(false);
+                        continue; // same page
+                    }
+
+                    resp.EnsureSuccessStatusCode();
+                    body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    resp.Headers.TryGetValues("Link", out var linkValues);
+                    linkHeader = linkValues?.FirstOrDefault();
+                }
+                catch (Exception e) when (
+                    !ct.IsCancellationRequested &&
+                    e is HttpRequestException or TaskCanceledException or IOException)
+                {
+                    pageAttempt++;
+                    if (pageAttempt > 5)
+                        throw; // fail loudly — never a silent partial fetch
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(10 * pageAttempt, 60)), ct).ConfigureAwait(false);
+                    // same page; body stays null
+                }
             }
 
-            attempt = 0;
-            response.EnsureSuccessStatusCode();
-
-            var body = await response.Content.ReadAsStringAsync(ct);
             all.AddRange(ParseStarredPage(body));
 
             // Pace pagination: rapid back-to-back page fetches trip GitHub's
@@ -80,17 +112,13 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
 
             // Parse Link header for pagination
             nextUrl = null;
-            if (response.Headers.TryGetValues("Link", out var linkValues))
+            if (linkHeader is not null)
             {
-                foreach (var link in linkValues!)
+                // Format: "<url>; rel=\"next\""
+                var idx = linkHeader.IndexOf("; rel=\"next\"");
+                if (idx >= 0)
                 {
-                    // Format: "<url>; rel=\"next\""
-                    var idx = link.IndexOf("; rel=\"next\"");
-                    if (idx >= 0)
-                    {
-                        var url = link.Substring(1, idx - 1);
-                        nextUrl = url;
-                    }
+                    nextUrl = linkHeader.Substring(1, idx - 1);
                 }
             }
         }
