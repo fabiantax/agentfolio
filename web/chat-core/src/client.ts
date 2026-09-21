@@ -7,6 +7,8 @@ export interface StreamCallbacks {
 }
 
 export interface ChatClient {
+  /** Receiver-normalized fetch used for all transport (DI point for tests). */
+  readonly fetchImpl: typeof fetch;
   /** POST /auth/login; resolves true when the session cookie is set. */
   login(password: string): Promise<boolean>;
   /** POST /chat and stream SSE tokens through the callbacks. */
@@ -14,10 +16,21 @@ export interface ChatClient {
 }
 
 export class AgentFolioClient implements ChatClient {
-  constructor(
-    private serverUrl: string,
-    private fetchImpl: typeof fetch = fetch,
-  ) {}
+  public readonly serverUrl: string;
+  /**
+   * Receiver-normalized fetch. `fetch` is a webIDL brand-checked window
+   * method: any receiver-bound invocation — `this.fetchImpl(...)` inside
+   * class methods — throws "Failed to execute 'fetch' on 'Window': Illegal
+   * invocation" in Chromium. Binding ONCE in the constructor fixes every call
+   * site at once; wrapping injected test doubles is a harmless no-op.
+   * (Regression: test/fetch-receiver.test.ts.)
+   */
+  public readonly fetchImpl: typeof fetch;
+
+  constructor(serverUrl: string, fetchImpl: typeof fetch = fetch) {
+    this.serverUrl = serverUrl;
+    this.fetchImpl = fetchImpl.bind(globalThis);
+  }
 
   private url(path: string): string {
     return this.serverUrl.replace(/\/+$/, '') + path;

@@ -116,9 +116,13 @@ footer a { color: var(--af-accent); text-decoration: none; }
             var form = await http.Request.ReadFormAsync(ct);
             var password = form["password"].ToString();
 
-            // Unknown/absent hash or wrong password → 401 (constant-ish behavior).
+            // Unknown/absent hash or wrong password → 401 (constant-ish behavior);
+            // body is the styled gate page with an inline error (never a raw trace).
             if (pwHash is null || !PasswordGate.VerifyPassword(password, pwHash))
-                return Results.Json(new { error = "invalid_password" }, statusCode: StatusCodes.Status401Unauthorized);
+            {
+                http.Response.Headers["X-Robots-Tag"] = "noindex";
+                return Results.Content(GatePage(slug, error: true), "text/html", contentEncoding: null, statusCode: StatusCodes.Status401Unauthorized);
+            }
 
             http.Response.Cookies.Append(ShareCookieName(tenant.TenantId), "1", new CookieOptions
             {
@@ -150,20 +154,59 @@ footer a { color: var(--af-accent); text-decoration: none; }
 
     internal static string ShareCookieName(string tenantId) => $"af_share_{tenantId}";
 
-    private static string GatePage(string slug) => $"""
+    private static string GatePage(string slug, bool error = false)
+    {
+        var enc = HttpUtility.HtmlEncode(slug);
+        var errorHtml = error
+            ? "\n      <p class=\"error\" role=\"alert\">Incorrect password — try again.</p>"
+            : string.Empty;
+        return $$"""
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="robots" content="noindex"><title>{HttpUtility.HtmlEncode(slug)} - AgentFolio</title></head>
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{enc}} — protected portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+{{TokenCss}}
+<style>
+.gate { max-width: 380px; margin: 96px auto 0; text-align: center; }
+.gate .lock { font: 500 0.6875rem/1.4 var(--af-mono); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--af-accent); margin-bottom: 12px; }
+.gate h1 { font-size: 1.75rem; margin-bottom: 6px; }
+.gate p { color: var(--af-text-2); font-size: 0.875rem; margin: 0 0 24px; }
+.gate form { background: var(--af-surface); border: 1px solid var(--af-border);
+  border-radius: var(--af-radius-lg); padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.gate input[type="password"] { padding: 10px 14px; border: 1px solid var(--af-border);
+  border-radius: var(--af-radius-md); font: inherit; color: var(--af-text);
+  background: #0B0F14; outline: none; text-align: center; }
+.gate input[type="password"]:focus { border-color: var(--af-accent); }
+.gate button { background: var(--af-accent-btn); color: #fff; border: 0;
+  border-radius: var(--af-radius-md); padding: 10px 16px; font: 600 0.875rem/1 var(--af-font);
+  cursor: pointer; transition: background 0.15s ease; }
+.gate button:hover { background: var(--af-accent-btn-hover); }
+.gate .error { color: var(--af-danger); font-size: 0.8125rem; margin: 0 0 12px; }
+@media (max-width: 640px) { .gate { margin-top: 64px; } }
+</style>
+</head>
 <body>
-  <h1>{HttpUtility.HtmlEncode(slug)}</h1>
-  <p>This portfolio is password protected.</p>
-  <form method="post" action="/share/{HttpUtility.UrlEncode(slug)}/unlock">
-    <input type="password" name="password" placeholder="Password" required />
-    <button type="submit">Unlock</button>
-  </form>
+  <main class="wrap">
+    <div class="gate">
+      <div class="lock">AgentFolio · Private link</div>
+      <h1>{{enc}}</h1>
+      <p>This portfolio is password protected.</p>{{errorHtml}}
+      <form method="post" action="/share/{{HttpUtility.UrlEncode(slug)}}/unlock">
+        <input type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus />
+        <button type="submit">Unlock</button>
+      </form>
+    </div>
+  </main>
 </body>
 </html>
 """;
+    }
 
     /// <summary>
     /// Capability chips that reflect REALITY (issue #41 AC4): data chips only when the
@@ -223,7 +266,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
       <div class="ev-title">VERIFY THIS DEMO</div>
       <ul>
         <li><a href="{{RepoUrl}}" rel="noopener noreferrer">Source &amp; history</a> — every commit, PR and review that built this page</li>
-        <li><a href="{{RepoUrl}}/actions">CI pipeline</a> — build 0-warnings, 101 unit + 2 E2E + 19 web tests, coverage line 72.8% / branch 65.2%</li>
+        <li><a href="{{RepoUrl}}/actions">CI pipeline</a> — build 0-warnings, 112 unit + 2 E2E + 20 web tests, coverage line 72.8% / branch 65.2%</li>
         <li>Eval — <a href="{{RepoUrl}}/raw/branch/main/eval/results/v2-citations.md">measured, 20 real questions</a>: citation-exactness 85% (was 0% pre-wiring; q03/q16/q19 misses documented), entity-F1 0.71, p50 4.3s on a local 4B model</li>
         <li>Architecture — .NET 10 vertical slices, CQRS-lite + event-log sourcing, Atlas graph-enforced boundaries, sandboxed doc extraction</li>
         <li>Deploy — Aspire orchestration, Helm/k8s target, self-hosted Git+CI on Tailscale</li>

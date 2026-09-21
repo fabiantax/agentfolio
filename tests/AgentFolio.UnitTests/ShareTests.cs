@@ -222,12 +222,21 @@ public class ShareTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, gate.StatusCode);
         var gateHtml = await gate.Content.ReadAsStringAsync();
         Assert.Contains("unlock", gateHtml);
+        // Styled gate page (design tokens) — never the bare default form.
+        Assert.Contains("AgentFolio · Private link", gateHtml);
+        Assert.Contains("class=\"gate\"", gateHtml);
+        Assert.Contains("--af-accent", gateHtml);
         Assert.StartsWith("noindex", gate.Headers.GetValues("X-Robots-Tag").First());
 
-        // Wrong password → 401.
+        // Wrong password → 401 with the styled gate page + inline error
+        // (no raw JSON body, no stack trace).
         var bad = await client.PostAsync("/share/showcase/unlock",
             new FormUrlEncodedContent([new KeyValuePair<string, string>("password", "wrong")]));
         Assert.Equal(HttpStatusCode.Unauthorized, bad.StatusCode);
+        var badHtml = await bad.Content.ReadAsStringAsync();
+        Assert.Contains("Incorrect password", badHtml);
+        Assert.Contains("AgentFolio · Private link", badHtml);
+        Assert.DoesNotContain("invalid_password", badHtml);
 
         // Correct password → cookie set + page served.
         var good = await client.PostAsync("/share/showcase/unlock",

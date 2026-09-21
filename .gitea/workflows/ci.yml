@@ -39,12 +39,21 @@ jobs:
       - name: Build (warnaserror)
         run: |
           export PATH="$HOME/.dotnet:$PATH"
-          dotnet build -warnaserror --no-restore
+          # Cap MSBuild worker nodes: on the loaded shared runner the node
+          # allocator can OOM (MSB1025 'Cannot acquire required number of
+          # nodes' + OutOfMemoryException, run 34257) — 4 nodes is plenty
+          # for this solution and leaves headroom for the test step.
+          dotnet build -warnaserror --no-restore -m:4 -nr:false
 
       - name: Test (with coverage)
         run: |
           export PATH="$HOME/.dotnet:$PATH"
-          dotnet test --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+          # Sequential per-project runs: parallel unit+E2E test hosts OOM'd
+          # the runner pod (run 34286, vstest OutOfMemoryException in
+          # Thread.StartCore). Serial halves peak memory; coverage still
+          # collected per run and merged by the glob below.
+          dotnet test tests/AgentFolio.UnitTests --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+          dotnet test tests/AgentFolio.E2E --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
 
       - name: Coverage summary
         if: always()

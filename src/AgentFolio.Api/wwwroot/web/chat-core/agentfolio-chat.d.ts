@@ -32,10 +32,13 @@ export declare class AgentFolioChatElement extends HTMLElement {
     attributeChangedCallback(name: string, _old: string | null, value: string | null): void;
     private ensureClient;
     private lastUrl;
+    private lastClient;
     private setStatus;
     private setTier;
     private appendBubble;
     private renderError;
+    /** Upload a document for the server-tier context (extracted text feeds /chat). */
+    upload(file: File): Promise<void>;
     /** Send one user message; routes to browser LLM when possible, else server SSE. */
     send(text?: string): Promise<void>;
     private renderCitations;

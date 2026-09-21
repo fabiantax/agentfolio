@@ -5,15 +5,15 @@ class h {
   /** Feed one raw network chunk; returns any events completed by it. */
   push(t) {
     this.buffer += t;
-    const e = [];
-    let r;
-    for (; (r = this.buffer.search(/\r?\n\r?\n/)) !== -1; ) {
-      const n = this.buffer.slice(0, r);
-      this.buffer = this.buffer.slice(r).replace(/^\r?\n\r?\n/, "");
-      const o = u(n);
-      o && e.push(o);
+    const r = [];
+    let e;
+    for (; (e = this.buffer.search(/\r?\n\r?\n/)) !== -1; ) {
+      const s = this.buffer.slice(0, e);
+      this.buffer = this.buffer.slice(e).replace(/^\r?\n\r?\n/, "");
+      const o = u(s);
+      o && r.push(o);
     }
-    return e;
+    return r;
   }
   /** Flush any buffered frame (call at end of stream). */
   flush() {
@@ -24,18 +24,18 @@ class h {
   }
 }
 function u(a) {
-  const t = a.split(/\r?\n/).filter((n) => n.startsWith("data:")).map((n) => n.slice(5).replace(/^ /, ""));
+  const t = a.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
   if (t.length === 0) return null;
-  const e = t.join(`
+  const r = t.join(`
 `);
-  if (e.trim() === "[DONE]") return null;
-  let r;
+  if (r.trim() === "[DONE]") return null;
+  let e;
   try {
-    r = JSON.parse(e);
+    e = JSON.parse(r);
   } catch {
-    return { kind: "unknown", raw: e };
+    return { kind: "unknown", raw: r };
   }
-  return b(r);
+  return b(e);
 }
 function b(a) {
   if (typeof a == "object" && a !== null) {
@@ -43,15 +43,15 @@ function b(a) {
     if (typeof t.text == "string" && t.conversationId === void 0)
       return { kind: "token", text: t.text };
     if (typeof t.conversationId == "string") {
-      const e = Array.isArray(t.citations) ? t.citations : [];
+      const r = Array.isArray(t.citations) ? t.citations : [];
       return {
         kind: "done",
         conversationId: t.conversationId,
         tier: typeof t.tier == "string" ? t.tier : "unknown",
-        citations: e.filter((r) => typeof r == "object" && r !== null && typeof r.url == "string").map((r) => ({
-          url: r.url,
-          title: typeof r.title == "string" ? r.title : r.url,
-          snippet: typeof r.snippet == "string" ? r.snippet : null
+        citations: r.filter((e) => typeof e == "object" && e !== null && typeof e.url == "string").map((e) => ({
+          url: e.url,
+          title: typeof e.title == "string" ? e.title : e.url,
+          snippet: typeof e.snippet == "string" ? e.snippet : null
         }))
       };
     }
@@ -59,54 +59,54 @@ function b(a) {
   return { kind: "unknown", raw: JSON.stringify(a) };
 }
 class m {
-  constructor(t, e = fetch) {
-    this.serverUrl = t, this.fetchImpl = e;
+  constructor(t, r = fetch) {
+    this.serverUrl = t, this.fetchImpl = r.bind(globalThis);
   }
   url(t) {
     return this.serverUrl.replace(/\/+$/, "") + t;
   }
   async login(t) {
-    const e = await this.fetchImpl(this.url("/auth/login"), {
+    const r = await this.fetchImpl(this.url("/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ password: t })
     });
-    if (!e.ok)
-      throw new Error(`login failed: ${e.status}`);
+    if (!r.ok)
+      throw new Error(`login failed: ${r.status}`);
     return !0;
   }
-  async sendMessage(t, e) {
-    let r;
+  async sendMessage(t, r) {
+    let e;
     try {
-      r = await this.fetchImpl(this.url("/chat"), {
+      e = await this.fetchImpl(this.url("/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ message: t })
       });
     } catch (i) {
-      e.onError(i instanceof Error ? i : new Error(String(i)));
+      r.onError(i instanceof Error ? i : new Error(String(i)));
       return;
     }
-    if (!r.ok || !r.body) {
-      e.onError(new Error(`chat request failed: ${r.status}`));
+    if (!e.ok || !e.body) {
+      r.onError(new Error(`chat request failed: ${e.status}`));
       return;
     }
-    const n = new h(), o = r.body.getReader(), s = new TextDecoder();
+    const s = new h(), o = e.body.getReader(), n = new TextDecoder();
     try {
       for (; ; ) {
         const { done: i, value: l } = await o.read();
         if (i) break;
-        for (const f of n.push(s.decode(l, { stream: !0 })))
-          d(f, e);
+        for (const f of s.push(n.decode(l, { stream: !0 })))
+          d(f, r);
       }
-      for (const i of n.push(s.decode()))
-        d(i, e);
-      for (const i of n.flush())
-        d(i, e);
+      for (const i of s.push(n.decode()))
+        d(i, r);
+      for (const i of s.flush())
+        d(i, r);
     } catch (i) {
-      e.onError(i instanceof Error ? i : new Error(String(i)));
+      r.onError(i instanceof Error ? i : new Error(String(i)));
     }
   }
 }
@@ -120,38 +120,38 @@ let c = null;
 async function g(a) {
   if (!p()) throw new Error("WebGPU unavailable");
   c || (a?.("loading"), c = (async () => {
-    const e = await import(
+    const r = await import(
       /* @vite-ignore */
       "@huggingface/transformers"
     );
-    return e.env.allowLocalModels = !1, await e.pipeline(
+    return r.env.allowLocalModels = !1, await r.pipeline(
       "text-generation",
       "onnx-community/LFM2-350M-ONNX",
       { dtype: "q4", device: "webgpu" }
     );
-  })().catch((e) => {
-    throw c = null, e;
+  })().catch((r) => {
+    throw c = null, r;
   }));
   try {
     await c;
-  } catch (e) {
-    throw a?.("error"), e instanceof Error ? e : new Error(String(e));
+  } catch (r) {
+    throw a?.("error"), r instanceof Error ? r : new Error(String(r));
   }
   a?.("ready");
   const t = await c;
   return {
-    async reply(e) {
-      let r = "";
-      const n = await import("@huggingface/transformers"), o = new n.TextStreamer(
+    async reply(r) {
+      let e = "";
+      const s = await import("@huggingface/transformers"), o = new s.TextStreamer(
         t.tokenizer,
-        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (s) => {
-          r += s;
+        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (n) => {
+          e += n;
         } }
       );
       return await t(
-        [{ role: "user", content: e }],
+        [{ role: "user", content: r }],
         { max_new_tokens: 256, do_sample: !1, streamer: o }
-      ), r;
+      ), e;
     },
     dispose() {
       c = null;
@@ -160,7 +160,7 @@ async function g(a) {
 }
 class x extends HTMLElement {
   constructor() {
-    super(...arguments), this.serverUrl = "", this.password = "", this.forceServer = !1, this.client = null, this.loggedIn = !1, this.local = null, this.localStatus = "unavailable", this.busy = !1, this.transcript = null, this.tierBadge = null, this.statusEl = null, this.input = null, this.lastUrl = "", this.fetchImpl = null;
+    super(...arguments), this.serverUrl = "", this.password = "", this.forceServer = !1, this.client = null, this.loggedIn = !1, this.local = null, this.localStatus = "unavailable", this.busy = !1, this.transcript = null, this.tierBadge = null, this.statusEl = null, this.input = null, this.lastUrl = "", this.lastClient = null;
   }
   static get observedAttributes() {
     return ["server-url"];
@@ -170,11 +170,11 @@ class x extends HTMLElement {
     const t = this.getAttribute("server-url");
     t && !this.serverUrl && (this.serverUrl = t);
   }
-  attributeChangedCallback(t, e, r) {
-    t === "server-url" && (this.serverUrl = r ?? "");
+  attributeChangedCallback(t, r, e) {
+    t === "server-url" && (this.serverUrl = e ?? "");
   }
   ensureClient() {
-    return (!this.client || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.client = new m(this.serverUrl), this.loggedIn = !1), this.client;
+    return (!this.lastClient || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.lastClient = new m(this.serverUrl), this.loggedIn = !1), this.lastClient;
   }
   setStatus(t) {
     this.statusEl && (this.statusEl.textContent = t), this.dispatchEvent(new CustomEvent("af-status", { detail: { status: t }, bubbles: !0, composed: !0 }));
@@ -182,9 +182,9 @@ class x extends HTMLElement {
   setTier(t) {
     this.tierBadge && (this.tierBadge.textContent = t === "Browser" ? "browser" : t === "Server" ? "server" : t.toLowerCase(), this.tierBadge.dataset.tier = t);
   }
-  appendBubble(t, e) {
-    const r = document.createElement("div");
-    return r.className = `bubble ${e}`, r.textContent = t, this.transcript?.appendChild(r), this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), r;
+  appendBubble(t, r) {
+    const e = document.createElement("div");
+    return e.className = `bubble ${r}`, e.textContent = t, this.transcript?.appendChild(e), this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), e;
   }
   renderError(t) {
     this.appendBubble(t, "error"), this.dispatchEvent(new CustomEvent("af-error", { detail: { message: t }, bubbles: !0, composed: !0 }));
@@ -192,73 +192,73 @@ class x extends HTMLElement {
   /** Upload a document for the server-tier context (extracted text feeds /chat). */
   async upload(t) {
     if (this.busy) return;
-    const e = new FormData();
-    e.append("file", t), this.setStatus("uploading"), this.appendBubble(`(uploaded ${t.name})`, "user");
+    const r = new FormData();
+    r.append("file", t), this.setStatus("uploading"), this.appendBubble(`(uploaded ${t.name})`, "user");
     try {
-      const r = this.ensureClient();
-      this.loggedIn || (await r.login(this.password), this.loggedIn = !0);
-      const n = await this.fetchImpl?.(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" }) ?? await fetch(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: e, credentials: "include" });
-      if (!n.ok) {
-        const s = await n.text();
-        throw new Error(`upload ${n.status}: ${s.slice(0, 120)}`);
+      const e = this.ensureClient();
+      this.loggedIn || (await e.login(this.password), this.loggedIn = !0);
+      const s = await e.fetchImpl(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: r, credentials: "include" });
+      if (!s.ok) {
+        const n = await s.text();
+        throw new Error(`upload ${s.status}: ${n.slice(0, 120)}`);
       }
-      const o = await n.json();
+      const o = await s.json();
       this.setStatus(o.extracted === !1 ? "doc: extraction failed" : "doc ready"), o.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${o.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
-    } catch (r) {
-      this.renderError(r instanceof Error ? r.message : String(r));
+    } catch (e) {
+      this.renderError(e instanceof Error ? e.message : String(e));
     }
   }
   /** Send one user message; routes to browser LLM when possible, else server SSE. */
   async send(t) {
-    const e = (t ?? this.input?.value ?? "").trim();
-    if (!e || this.busy) return;
-    this.input && (this.input.value = ""), this.appendBubble(e, "user"), this.busy = !0, this.setStatus("loading");
-    const r = () => {
+    const r = (t ?? this.input?.value ?? "").trim();
+    if (!r || this.busy) return;
+    this.input && (this.input.value = ""), this.appendBubble(r, "user"), this.busy = !0, this.setStatus("loading");
+    const e = () => {
       this.busy = !1, this.setStatus("idle");
     };
     if (!this.forceServer && p())
       try {
         this.local || (this.setStatus("browser-loading"), this.local = await g((o) => this.localStatus = o));
-        const n = await this.local.reply(e);
-        this.setTier("Browser"), this.appendBubble(n, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
+        const s = await this.local.reply(r);
+        this.setTier("Browser"), this.appendBubble(s, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
           detail: { conversationId: null, tier: "Browser", citations: [] },
           bubbles: !0,
           composed: !0
-        })), r();
+        })), e();
         return;
       } catch {
         this.local = null;
       }
     try {
-      const n = this.ensureClient();
-      this.loggedIn || (await n.login(this.password), this.loggedIn = !0);
+      const s = this.ensureClient();
+      this.loggedIn || (await s.login(this.password), this.loggedIn = !0);
       const o = this.appendBubble("", "assistant");
-      this.setStatus("streaming"), await n.sendMessage(e, {
-        onToken: (s) => {
-          o.textContent += s, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: s }, bubbles: !0, composed: !0 }));
+      this.setStatus("streaming"), await s.sendMessage(r, {
+        onToken: (n) => {
+          o.textContent += n, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: n }, bubbles: !0, composed: !0 }));
         },
-        onDone: (s) => {
-          this.setTier(s.tier), this.renderCitations(s.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: s, bubbles: !0, composed: !0 }));
+        onDone: (n) => {
+          this.setTier(n.tier), this.renderCitations(n.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: n, bubbles: !0, composed: !0 }));
         },
-        onError: (s) => {
-          this.renderError(`Error: ${s.message}`);
+        onError: (n) => {
+          this.renderError(`Error: ${n.message}`);
         }
       });
-    } catch (n) {
-      this.renderError(n instanceof Error ? n.message : String(n));
+    } catch (s) {
+      this.renderError(s instanceof Error ? s.message : String(s));
     } finally {
-      r();
+      e();
     }
   }
   renderCitations(t) {
     if (!t.length) return;
-    const e = document.createElement("div");
-    e.className = "citations";
-    for (const r of t) {
-      const n = document.createElement("a");
-      n.href = r.url, n.target = "_blank", n.rel = "noopener noreferrer", n.textContent = r.title, n.title = r.snippet ?? r.title, e.appendChild(n);
+    const r = document.createElement("div");
+    r.className = "citations";
+    for (const e of t) {
+      const s = document.createElement("a");
+      s.href = e.url, s.target = "_blank", s.rel = "noopener noreferrer", s.textContent = e.title, s.title = e.snippet ?? e.title, r.appendChild(s);
     }
-    this.transcript?.appendChild(e);
+    this.transcript?.appendChild(r);
   }
   render() {
     const t = document.createElement("style");
@@ -313,23 +313,23 @@ class x extends HTMLElement {
       button[type="button"]:hover { color: var(--af-text); border-color: var(--af-text-2); }
       @media (max-width: 640px) { .log { height: 280px; } .bubble { max-width: 92%; } }
     `, this.shadowRoot.append(t);
-    const e = document.createElement("div");
-    e.className = "head";
-    const r = document.createElement("strong");
-    r.textContent = "Portfolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", e.append(r, this.tierBadge, this.statusEl), this.transcript = document.createElement("div"), this.transcript.className = "log";
-    const n = document.createElement("form");
+    const r = document.createElement("div");
+    r.className = "head";
+    const e = document.createElement("strong");
+    e.textContent = "Portfolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", r.append(e, this.tierBadge, this.statusEl), this.transcript = document.createElement("div"), this.transcript.className = "log";
+    const s = document.createElement("form");
     this.input = document.createElement("input"), this.input.type = "text", this.input.placeholder = "Ask about this portfolio…", this.input.setAttribute("aria-label", "Message");
     const o = document.createElement("button");
     o.type = "button", o.textContent = "📎", o.title = "Upload a document (pdf/txt/md/docx) for grounded answers", o.setAttribute("aria-label", "Upload document");
-    const s = document.createElement("input");
-    s.type = "file", s.accept = ".pdf,.txt,.md,.docx", s.hidden = !0, o.addEventListener("click", () => s.click()), s.addEventListener("change", () => {
-      const l = s.files?.[0];
-      l && this.upload(l), s.value = "";
+    const n = document.createElement("input");
+    n.type = "file", n.accept = ".pdf,.txt,.md,.docx", n.hidden = !0, o.addEventListener("click", () => n.click()), n.addEventListener("change", () => {
+      const l = n.files?.[0];
+      l && this.upload(l), n.value = "";
     });
     const i = document.createElement("button");
-    i.type = "submit", i.textContent = "Send", n.append(this.input, o, s, i), n.addEventListener("submit", (l) => {
+    i.type = "submit", i.textContent = "Send", s.append(this.input, o, n, i), s.addEventListener("submit", (l) => {
       l.preventDefault(), this.send();
-    }), this.shadowRoot.append(e, this.transcript, n);
+    }), this.shadowRoot.append(r, this.transcript, s);
   }
 }
 customElements.get("agentfolio-chat") || customElements.define("agentfolio-chat", x);

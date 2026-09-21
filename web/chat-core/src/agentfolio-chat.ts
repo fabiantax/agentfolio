@@ -49,16 +49,16 @@ export class AgentFolioChatElement extends HTMLElement {
   }
 
   private ensureClient(): ChatClient {
-    if (!this.client || this.lastUrl !== this.serverUrl) {
+    if (!this.lastClient || this.lastUrl !== this.serverUrl) {
       this.lastUrl = this.serverUrl;
-      this.client = new AgentFolioClient(this.serverUrl);
+      this.lastClient = new AgentFolioClient(this.serverUrl);
       this.loggedIn = false;
     }
-    return this.client;
+    return this.lastClient;
   }
 
   private lastUrl = '';
-  private fetchImpl: typeof fetch | null = null;
+  private lastClient: ChatClient | null = null;
 
   private setStatus(s: string): void {
     if (this.statusEl) this.statusEl.textContent = s;
@@ -99,8 +99,7 @@ export class AgentFolioChatElement extends HTMLElement {
         await client.login(this.password);
         this.loggedIn = true;
       }
-      const res = await this.fetchImpl?.(new URL('/api/uploads?sync=1', this.serverUrl || window.location.origin), { method: 'POST', body: form, credentials: 'include' } as RequestInit)
-        ?? await fetch(new URL('/api/uploads?sync=1', this.serverUrl || window.location.origin), { method: 'POST', body: form, credentials: 'include' });
+      const res = await client.fetchImpl(new URL('/api/uploads?sync=1', this.serverUrl || window.location.origin), { method: 'POST', body: form, credentials: 'include' } as RequestInit);
       if (!res.ok) {
         const body = await res.text();
         throw new Error(`upload ${res.status}: ${body.slice(0, 120)}`);
