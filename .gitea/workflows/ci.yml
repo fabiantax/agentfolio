@@ -43,20 +43,30 @@ jobs:
           # allocator can OOM (MSB1025 'Cannot acquire required number of
           # nodes' + OutOfMemoryException, run 34257) — 4 nodes is plenty
           # for this solution and leaves headroom for the test step.
-          dotnet build -warnaserror --no-restore -m:4 -nr:false
+          # UseSharedCompilation=false kills the lingering Roslyn server (~1G+ per host).
+          dotnet build -warnaserror --no-restore -m:4 -nr:false -p:UseSharedCompilation=false
 
       - name: Test (with coverage)
         run: |
           export PATH="$HOME/.dotnet:$PATH"
           # Sequential per-project runs: parallel unit+E2E test hosts OOM'd
           # the runner pod (run 34286, vstest OutOfMemoryException in
-          # Thread.StartCore). Serial halves peak memory; coverage still
-          # collected per run and merged by the glob below.
-          dotnet test tests/AgentFolio.UnitTests --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
-          dotnet test tests/AgentFolio.E2E --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+          # Thread.StartCore). Serial halves peak memory.
+          # Coverage policy: PR runs only (merge gate); plain push-to-main
+          # runs skip coverlet instrumentation — lower heap, faster hosts.
+          # NOTE: coverage arg can NOT go through an unquoted $COV variable —
+          # bash word-splitting shreds the embedded quotes (measured: MSB1008,
+          # run 115). Full command per branch instead.
+          if [ "${{ gitea.event_name }}" = "pull_request" ]; then
+            dotnet test tests/AgentFolio.UnitTests --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+            dotnet test tests/AgentFolio.E2E --no-build --verbosity minimal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+          else
+            dotnet test tests/AgentFolio.UnitTests --no-build --verbosity minimal --results-directory ./TestResults
+            dotnet test tests/AgentFolio.E2E --no-build --verbosity minimal --results-directory ./TestResults
+          fi
 
       - name: Coverage summary
-        if: always()
+        if: always() && gitea.event_name == 'pull_request'
         run: |
           dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.4.4 || true
           REPORTGEN="$HOME/.dotnet/tools/reportgenerator"
