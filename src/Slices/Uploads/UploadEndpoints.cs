@@ -94,28 +94,46 @@ public static class UploadEndpoints
                 // throws ObjectDisposedException (IFeatureCollection has been disposed).
                 var extraction = http.RequestServices.GetRequiredService<ExtractionService>();
                 var uploadKey = receipt.Key;
-                string? extractionError = null;
                 var extractNow = http.Request.Query.ContainsKey("sync");
-                var run = async () =>
-                {
-                    try { await extraction.ExtractAsync(tid, sid, uploadKey, onError: r => LastExtractionError = r); }
-                    catch (Exception ex) { LastExtractionError = $"extraction_dispatch_error: {ex.Message}"; }
-                };
 
                 if (extractNow)
                 {
-                    await run();
-                    extractionError = LastExtractionError;
+                    // Sync: report THIS extraction's outcome. LastExtractionError is a
+                    // process-global diagnostic that ANY concurrent extraction (e.g. a
+                    // background Task.Run from another request) writes — reading it here
+                    // flagged our success as failed whenever another extraction failed
+                    // in the same window (measured: ChatTests citation flake, CI #118).
+                    string? syncError = null;
+                    try
+                    {
+                        await extraction.ExtractAsync(tid, sid, uploadKey,
+                            onError: r => { syncError = r; LastExtractionError = r; });
+                    }
+                    catch (Exception ex)
+                    {
+                        syncError = $"extraction_dispatch_error: {ex.Message}";
+                        LastExtractionError = syncError;
+                    }
                     return Results.Ok(new
                     {
                         receipt.Key,
                         receipt.Bytes,
                         receipt.ContentType,
                         receipt.ExpiresAt,
-                        extracted = extractionError is null,
-                        extractionError,
+                        extracted = syncError is null,
+                        extractionError = syncError,
                     });
                 }
+
+                // s4-04: fire-and-forget extraction in the process sandbox.
+                // Capture SINGLETONS now: the request scope (http.RequestServices) is
+                // disposed when the response completes — using it in the background task
+                // throws ObjectDisposedException (IFeatureCollection has been disposed).
+                var run = async () =>
+                {
+                    try { await extraction.ExtractAsync(tid, sid, uploadKey, onError: r => LastExtractionError = r); }
+                    catch (Exception ex) { LastExtractionError = $"extraction_dispatch_error: {ex.Message}"; }
+                };
 
                 _ = Task.Run(run, CancellationToken.None);
                 return Results.Ok(receipt);

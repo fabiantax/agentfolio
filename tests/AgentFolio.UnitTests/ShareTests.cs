@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using AgentFolio.Contracts;
 using AgentFolio.Platform;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Slices.Share;
 using Slices.Tenancy;
+using Xunit;
 
 namespace AgentFolio.UnitTests;
 
@@ -46,6 +48,15 @@ public sealed class ShareFixture : IDisposable
     }
 }
 
+/// <summary>
+/// password-hash-env collection: hosts the FULL Program pipeline (owner auth,
+/// cookie minting) and runs sync uploads end-to-end. Serializing with
+/// Auth/Chat/Stars keeps the process-global env vars (AGENTFOLIO_DB_PATH,
+/// password hash, AGENTFOLIO_SANDBOX_EXTRACTOR) stable while requests are
+/// in flight — measured: parallel ShareTests sync-uploads raced ChatTests'
+/// citation flow and read a poisoned LastExtractionError (CI #118).
+/// </summary>
+[Collection("password-hash-env")]
 public class ShareTests : IDisposable
 {
     private readonly ShareFixture _fx = new();
@@ -238,24 +249,36 @@ public class ShareTests : IDisposable
         Assert.Contains("AgentFolio · Private link", badHtml);
         Assert.DoesNotContain("invalid_password", badHtml);
 
-        // Correct password → cookie set + page served.
+        // Correct password → TWO cookies (share + owner-style auth for the
+        // widget's uploads/chat) + page served.
         var good = await client.PostAsync("/share/showcase/unlock",
             new FormUrlEncodedContent([new KeyValuePair<string, string>("password", "hunter2")]));
         Assert.Equal(HttpStatusCode.OK, good.StatusCode);
         Assert.StartsWith("noindex", good.Headers.GetValues("X-Robots-Tag").First());
-        var setCookie = Assert.Single(good.Headers.GetValues("Set-Cookie"));
-        Assert.Contains($"af_share_{showcase.TenantId}", setCookie);
-        Assert.Contains("httponly", setCookie.ToLowerInvariant());
+        var setCookies = good.Headers.GetValues("Set-Cookie").ToList();
+        Assert.Equal(2, setCookies.Count);
+        var shareCookie = setCookies.Single(c => c.StartsWith($"af_share_{showcase.TenantId}"));
+        Assert.Contains("httponly", shareCookie.ToLowerInvariant());
+        var authCookie = setCookies.Single(c => c.StartsWith("agentfolio_auth="));
 
-        // Cookie unlocks subsequent GETs.
-        var cookieValue = setCookie.Split(';')[0];
+        // Share cookie unlocks subsequent GETs.
+        var cookieValue = shareCookie.Split(';')[0];
         var req = new HttpRequestMessage(HttpMethod.Get, "/share/showcase");
         req.Headers.Add("Cookie", cookieValue);
         var unlocked = await client.SendAsync(req);
         var html = await unlocked.Content.ReadAsStringAsync();
         Assert.Contains("agentfolio-chat", html);
-    }
 
+        // The auth cookie authorizes widget uploads (tid claim = showcase
+        // tenant, resolved server-side): an upload with ONLY the auth cookie
+        // (no owner login) must succeed.
+        var up = await client.PostAsync("/api/uploads?sync=1",
+            new MultipartFormDataContent { { new ByteArrayContent("share-auth probe"u8.ToArray()), "file", "s.txt" } });
+        Assert.Equal(HttpStatusCode.OK, up.StatusCode);
+        var upBody = await up.Content.ReadAsStringAsync();
+        Assert.StartsWith("{\"key\":\"tenants/", upBody);
+        Assert.False(string.IsNullOrEmpty(authCookie)); // auth cookie actually present
+    }
     // ---------- isolation matrix ----------
 
     [Fact]

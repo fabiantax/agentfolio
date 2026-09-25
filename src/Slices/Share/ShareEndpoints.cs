@@ -1,5 +1,7 @@
 using AgentFolio.Platform.Auth;
 using AgentFolio.Platform.Tenancy;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -131,6 +133,18 @@ footer a { color: var(--af-accent); text-decoration: none; }
                 SameSite = SameSiteMode.Lax,
                 Secure = http.Request.IsHttps, // tailnet-http demo drops Secure cookies
             });
+
+            // Sign the share visitor in for /api/uploads + /chat (both
+            // RequireAuthorization): the share visitor IS authenticated for
+            // this tenant — tenant id comes from the REGISTRY row, never from
+            // client input, so the tid claim cannot be forged here. Widget
+            // uploads/chat then resolve to this tenant (Uploads
+            // ResolveTenantIdAsync reads the tid claim).
+            var sharePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, $"share:{tenant.TenantId}"), new Claim("tid", tenant.TenantId)],
+                CookieAuthenticationDefaults.AuthenticationScheme));
+            await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, sharePrincipal);
+
             http.Response.Headers["X-Robots-Tag"] = "noindex";
             return Results.Content(PortfolioPage(slug, tenant.TenantId, HasAnyStars(registry, shards, tenant.TenantId)), "text/html");
         });
@@ -203,6 +217,10 @@ footer a { color: var(--af-accent); text-decoration: none; }
       </form>
     </div>
   </main>
+  <script>
+    // The unlock POST signed the visitor in (auth cookie) — uploads and chat
+    // just work. No client-side credential handling needed here.
+  </script>
 </body>
 </html>
 """;
@@ -274,8 +292,13 @@ footer a { color: var(--af-accent); text-decoration: none; }
     </aside>
     <footer>Built with .NET 10 · Microsoft Agent Framework · SQLite vec/FTS · <a href="/share/showcase">AgentFolio</a></footer>
   </main>
-  <script type="module" src="{{ChatScriptPlaceholderSrc}}"></script>
-</body>
+    <script type="module" src="{{ChatScriptPlaceholderSrc}}"></script>
+    <script>
+      // The unlock POST signs the share visitor in (auth cookie with the
+      // tenant tid claim) — uploads and chat just work with the cookie. No
+      // client-side credential handling needed.
+    </script>
+  </body>
 </html>
 """;
     }

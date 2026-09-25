@@ -99,27 +99,27 @@ class m {
         const { done: i, value: l } = await o.read();
         if (i) break;
         for (const f of s.push(n.decode(l, { stream: !0 })))
-          d(f, r);
+          c(f, r);
       }
       for (const i of s.push(n.decode()))
-        d(i, r);
+        c(i, r);
       for (const i of s.flush())
-        d(i, r);
+        c(i, r);
     } catch (i) {
       r.onError(i instanceof Error ? i : new Error(String(i)));
     }
   }
 }
-function d(a, t) {
+function c(a, t) {
   a.kind === "token" ? t.onToken(a.text) : a.kind === "done" && t.onDone(a);
 }
 function p(a = navigator) {
   return typeof a?.gpu == "object" && a.gpu !== null;
 }
-let c = null;
+let d = null;
 async function g(a) {
   if (!p()) throw new Error("WebGPU unavailable");
-  c || (a?.("loading"), c = (async () => {
+  d || (a?.("loading"), d = (async () => {
     const r = await import(
       /* @vite-ignore */
       "@huggingface/transformers"
@@ -130,15 +130,15 @@ async function g(a) {
       { dtype: "q4", device: "webgpu" }
     );
   })().catch((r) => {
-    throw c = null, r;
+    throw d = null, r;
   }));
   try {
-    await c;
+    await d;
   } catch (r) {
     throw a?.("error"), r instanceof Error ? r : new Error(String(r));
   }
   a?.("ready");
-  const t = await c;
+  const t = await d;
   return {
     async reply(r) {
       let e = "";
@@ -154,7 +154,7 @@ async function g(a) {
       ), e;
     },
     dispose() {
-      c = null;
+      d = null;
     }
   };
 }
@@ -196,7 +196,7 @@ class x extends HTMLElement {
     r.append("file", t), this.setStatus("uploading"), this.appendBubble(`(uploaded ${t.name})`, "user");
     try {
       const e = this.ensureClient();
-      this.loggedIn || (await e.login(this.password), this.loggedIn = !0);
+      !this.loggedIn && this.password && (await e.login(this.password), this.loggedIn = !0);
       const s = await e.fetchImpl(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: r, credentials: "include" });
       if (!s.ok) {
         const n = await s.text();
@@ -231,7 +231,7 @@ class x extends HTMLElement {
       }
     try {
       const s = this.ensureClient();
-      this.loggedIn || (await s.login(this.password), this.loggedIn = !0);
+      !this.loggedIn && this.password && (await s.login(this.password), this.loggedIn = !0);
       const o = this.appendBubble("", "assistant");
       this.setStatus("streaming"), await s.sendMessage(r, {
         onToken: (n) => {

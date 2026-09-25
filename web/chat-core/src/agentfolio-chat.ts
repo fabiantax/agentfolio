@@ -95,7 +95,11 @@ export class AgentFolioChatElement extends HTMLElement {
     this.appendBubble(`(uploaded ${file.name})`, 'user');
     try {
       const client = this.ensureClient();
-      if (!this.loggedIn) {
+      // Login ONLY when a password was explicitly provided. On the share page
+      // the unlock POST already signed the visitor in (auth cookie, tenant
+      // tid claim) — a password-less login attempt there would 401 and mask
+      // an otherwise-working upload.
+      if (!this.loggedIn && this.password) {
         await client.login(this.password);
         this.loggedIn = true;
       }
@@ -152,7 +156,10 @@ export class AgentFolioChatElement extends HTMLElement {
 
     try {
       const client = this.ensureClient();
-      if (!this.loggedIn) {
+      // Login ONLY when a password was explicitly provided (owner/host pages).
+      // On the share page the unlock POST already signed the visitor in —
+      // see the matching comment in upload().
+      if (!this.loggedIn && this.password) {
         await client.login(this.password);
         this.loggedIn = true;
       }

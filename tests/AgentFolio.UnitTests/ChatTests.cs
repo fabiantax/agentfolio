@@ -26,6 +26,7 @@ public class ChatTests : IDisposable
         foreach (var p in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" })
             if (File.Exists(p)) File.Delete(p);
         Environment.SetEnvironmentVariable("AGENTFOLIO_DB_PATH", null);
+        Environment.SetEnvironmentVariable(ExtractionService.ExtractorEnvVar, null);
         Environment.SetEnvironmentVariable(PasswordGate.HashEnvVar, null);
     }
 
