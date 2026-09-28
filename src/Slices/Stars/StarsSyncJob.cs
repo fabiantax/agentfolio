@@ -14,12 +14,17 @@ public sealed class StarsSyncJob
     public int Unchanged { get; internal set; }
     public string? Error { get; private set; }
     public bool Force { get; }
+    /// <summary>Per-page sync progress (#67): pages fully fetched so far.</summary>
+    public int PagesDone { get; internal set; }
+    /// <summary>Last progress note (page ok / retry / rate-limit wait).</summary>
+    public string? LastPageNote { get; internal set; }
     public DateTimeOffset StartedAt { get; }
     public DateTimeOffset? FinishedAt { get; private set; }
 
     public StarsSyncJob(Guid jobId, string tenantId, StarsSyncJobStatus status,
         int fetched, int upserted, int unchanged, string? error,
-        DateTimeOffset startedAt, DateTimeOffset? finishedAt, bool force = false)
+        DateTimeOffset startedAt, DateTimeOffset? finishedAt, bool force = false,
+        int pagesDone = 0, string? lastPageNote = null)
     {
         JobId = jobId;
         TenantId = tenantId;
@@ -31,6 +36,17 @@ public sealed class StarsSyncJob
         StartedAt = startedAt;
         FinishedAt = finishedAt;
         Force = force;
+        PagesDone = pagesDone;
+        LastPageNote = lastPageNote;
+    }
+
+    /// <summary>Record fetch progress while Running (#67). Legal only mid-run.</summary>
+    public void ReportPageProgress(int pagesDone, string note)
+    {
+        if (Status != StarsSyncJobStatus.Running)
+            throw new InvalidOperationException($"progress requires Running, was {Status}");
+        PagesDone = pagesDone;
+        LastPageNote = note;
     }
 
     public static StarsSyncJob Queued(string tenantId, bool force = false) =>

@@ -31,7 +31,10 @@ public sealed class MockGitHubStarsClient : IGitHubStarsClient
         _shouldDelay = resetOffsetSeconds < 0;
     }
 
-    public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct)
+    public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct) =>
+        GetAllStarredAsync(ct, onProgress: null);
+
+    public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct, Action<int, string>? onProgress)
     {
         // Simulate pagination across pages
         var all = new List<StarredRepoDto>();
@@ -39,6 +42,7 @@ public sealed class MockGitHubStarsClient : IGitHubStarsClient
         for (int i = 0; i < _pages.Count; i++)
         {
             all.AddRange(_pages[i]);
+            onProgress?.Invoke(i + 1, $"page {i + 1} ok (mock)");
             // Simulate Link header pagination - last page has no next
             if (i < _pages.Count - 1) continue;
             break;

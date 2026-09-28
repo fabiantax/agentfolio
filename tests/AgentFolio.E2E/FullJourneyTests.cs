@@ -215,6 +215,9 @@ public class FullJourneyTests : IDisposable
     private sealed class FakeE2EStarsClient : IGitHubStarsClient
     {
         public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct)
+            => GetAllStarredAsync(ct, onProgress: null);
+
+        public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct, Action<int, string>? onProgress)
             => Task.FromResult<IReadOnlyList<StarredRepoDto>>(new[]
             {
                 new StarredRepoDto(1, "repo1", "user1/repo1", "desc1", "https://github.com/1", 10, "C#", new[] { "t1" }, "user1", "2024-03-01T00:00:00Z"),

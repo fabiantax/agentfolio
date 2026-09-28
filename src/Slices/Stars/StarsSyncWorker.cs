@@ -58,6 +58,12 @@ public sealed class StarsSyncWorker : BackgroundService
                 var service = new StarsSyncService(starsClient, store);
                 var snapshotKey = StarsSnapshot.KeyFor(job.TenantId);
                 StarsSyncResult result;
+                void ReportProgress(int pages, string note)
+                {
+                    _ = _queue.ReportProgressAsync(job.JobId, pages, note, CancellationToken.None)
+                        .ContinueWith(t => { }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+                }
+
                 if (objectStore is not null)
                 {
                     result = await service.SyncAsync(appStopping, async (repos, token) =>
@@ -66,11 +72,11 @@ public sealed class StarsSyncWorker : BackgroundService
                         await objectStore.PutAsync(snapshotKey,
                             new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)),
                             "application/json", token).ConfigureAwait(false);
-                    }).ConfigureAwait(false);
+                    }, ReportProgress).ConfigureAwait(false);
                 }
                 else
                 {
-                    result = await service.SyncAsync(appStopping).ConfigureAwait(false);
+                    result = await service.SyncAsync(appStopping, null, ReportProgress).ConfigureAwait(false);
                 }
 
                 await _queue.CompleteAsync(job.JobId, result.Fetched, result.Upserted, result.Unchanged,

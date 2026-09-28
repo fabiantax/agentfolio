@@ -52,9 +52,10 @@ if (args.Contains("--migrate-single-to-tenant"))
 builder.Services.AddNimChatClient();
 
 // Stars: GitHub stars client from AGENTFOLIO_GITHUB_TOKEN (scoped, overridable in tests).
-builder.Services.AddScoped<IGitHubStarsClient>(_ =>
+builder.Services.AddScoped<IGitHubStarsClient>(sp =>
     new HttpGitHubStarsClient(Environment.GetEnvironmentVariable("AGENTFOLIO_GITHUB_TOKEN")
-        ?? throw new InvalidOperationException("AGENTFOLIO_GITHUB_TOKEN is not set.")));
+        ?? throw new InvalidOperationException("AGENTFOLIO_GITHUB_TOKEN is not set."),
+        sp.GetRequiredService<ILogger<HttpGitHubStarsClient>>() ?? null));
 builder.Services.AddSingleton<IConversationStore>(_ =>
     new SqliteConversationStore(
         Environment.GetEnvironmentVariable("AGENTFOLIO_DB_PATH") ?? "agentfolio.db"));

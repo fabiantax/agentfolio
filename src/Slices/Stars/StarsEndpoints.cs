@@ -101,6 +101,8 @@ public static class StarsEndpoints
                 {
                     jobId = job.JobId,
                     status = job.Status.ToString().ToLowerInvariant(),
+                    pagesDone = job.PagesDone,
+                    lastPageNote = job.LastPageNote,
                     fetched = job.Fetched,
                     upserted = job.Upserted,
                     unchanged = job.Unchanged,

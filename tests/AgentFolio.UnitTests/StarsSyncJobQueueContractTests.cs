@@ -117,6 +117,16 @@ public sealed class InMemorySyncJobQueueFake : ISyncJobQueue
         return Task.FromResult(job);
     }
 
+    public Task ReportProgressAsync(Guid jobId, int pagesDone, string note, CancellationToken ct = default)
+    {
+        lock (_lock)
+        {
+            if (_jobs.TryGetValue(jobId, out var job) && job.Status == StarsSyncJobStatus.Running)
+                job.ReportPageProgress(pagesDone, note);
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<StarsSyncJob?> TryDequeueAsync(CancellationToken ct = default)
     {
         lock (_lock)

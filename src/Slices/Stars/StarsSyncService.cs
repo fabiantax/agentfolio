@@ -27,9 +27,10 @@ public sealed class StarsSyncService
     /// DTO list after a successful sync (write-through cache hook).
     /// </summary>
     public async Task<StarsSyncResult> SyncAsync(CancellationToken ct = default,
-        Func<IReadOnlyList<StarredRepoDto>, CancellationToken, Task>? snapshotSink = null)
+        Func<IReadOnlyList<StarredRepoDto>, CancellationToken, Task>? snapshotSink = null,
+        Action<int, string>? onProgress = null)
     {
-        var starredDtos = await _starsClient.GetAllStarredAsync(ct).ConfigureAwait(false);
+        var starredDtos = await _starsClient.GetAllStarredAsync(ct, onProgress).ConfigureAwait(false);
 
         // Canonicalize by RepoId (key for dedup)
         var grouped = starredDtos

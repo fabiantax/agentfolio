@@ -1,5 +1,7 @@
 namespace Slices.Stars;
 
+using Microsoft.Extensions.Logging;
+
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -8,35 +10,51 @@ using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>Fetches GitHub starred repos via raw HttpClient with pagination and rate-limit backoff.</summary>
-public sealed class HttpGitHubStarsClient : IGitHubStarsClient
+public class HttpGitHubStarsClient : IGitHubStarsClient
 {
     private readonly string _token;
     private readonly HttpClient _http;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
 
-    public HttpGitHubStarsClient(string token)
+    public HttpGitHubStarsClient(string token, Microsoft.Extensions.Logging.ILogger? logger = null)
     {
         _token = token;
-        _http = new HttpClient(new HttpClientHandler
+        _logger = logger;
+        // #67 stall-hardening (measured 2026-09-28: a dead-idle TLS read sat 1h45m while
+        // HttpClient.Timeout never fired on the stalled body read):
+        //  - SocketsHttpHandler with PooledConnectionLifetime: pooled connections are
+        //    recycled, so a half-dead keep-alive socket cannot be reused forever.
+        //  - ConnectTimeout bounds the TCP/TLS handshake independently of request timeout.
+        //  - Per-page wall-clock budget (linked CTS, 120 s) bounds the WHOLE page attempt
+        //    including the body read — a stall becomes TaskCanceledException and flows
+        //    into the existing bounded retry instead of hanging forever.
+        var handler = new SocketsHttpHandler
         {
-            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate
-        })
+            AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+        };
+        _http = new HttpClient(handler)
         {
             BaseAddress = new Uri("https://api.github.com/"),
+            Timeout = TimeSpan.FromSeconds(PageBudgetSeconds + 30), // outer safety net above the per-page budget
         };
-        // Measured 2026-09-20: a single starred page (100 items, ~660 KB gz) can take
-        // >100 s on GitHub's side; the HttpClient default of 100 s aborted a 46-minute
-        // full sync mid-pagination (TaskCanceledException). Pages may be slow; they are
-        // never silently wrong — so allow a long single-page ceiling and rely on the
-        // bounded per-page retries below for genuine stalls.
-        _http.Timeout = TimeSpan.FromMinutes(10);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("AgentFolio/1.0");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.star+json");
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _token);
     }
 
-    public async Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct)
+    internal const int PageBudgetSeconds = 120;
+
+    public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct) =>
+        GetAllStarredAsync(ct, onProgress: null);
+
+    public async Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(
+        CancellationToken ct, Action<int, string>? onProgress)
     {
         var all = new List<StarredRepoDto>();
+        var pagesDone = 0;
         string? nextUrl = "https://api.github.com/user/starred?per_page=100";
 
         while (nextUrl != null)
@@ -55,8 +73,12 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
             {
                 try
                 {
+                    using var pageCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    pageCts.CancelAfter(TimeSpan.FromSeconds(PageBudgetSeconds));
                     using var request = new HttpRequestMessage(HttpMethod.Get, nextUrl);
-                    using var resp = await _http.SendAsync(request, ct).ConfigureAwait(false);
+                    _logger?.LogInformation("stars fetch: page {Page} attempt {Attempt} from {Url}",
+                        pagesDone + 1, pageAttempt + 1, nextUrl);
+                    using var resp = await SendPageAsync(request, pageCts.Token).ConfigureAwait(false);
 
                     if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden ||
                         (int)resp.StatusCode == 429)
@@ -83,14 +105,20 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
                         if (resp.Headers?.RetryAfter?.Delta is { } delta)
                             delay = TimeSpan.FromSeconds(Math.Max(delay.TotalSeconds, Math.Min(delta.TotalSeconds, 120)));
 
+                        _logger?.LogWarning("stars fetch: page {Page} rate-limited ({Status}); waiting {Delay}s",
+                            pagesDone + 1, (int)resp.StatusCode, delay.TotalSeconds);
+                        try { onProgress?.Invoke(pagesDone, $"page {pagesDone + 1} rate-limited, waiting {delay.TotalSeconds:F0}s"); } catch { }
                         await Task.Delay(delay, ct).ConfigureAwait(false);
                         continue; // same page
                     }
 
                     resp.EnsureSuccessStatusCode();
-                    body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    body = await resp.Content.ReadAsStringAsync(pageCts.Token).ConfigureAwait(false);
                     resp.Headers.TryGetValues("Link", out var linkValues);
                     linkHeader = linkValues?.FirstOrDefault();
+                    pagesDone++;
+                    _logger?.LogInformation("stars fetch: page {Page} ok ({Bytes} bytes)", pagesDone, body.Length);
+                    try { onProgress?.Invoke(pagesDone, $"page {pagesDone} ok ({body.Length} bytes)"); } catch { /* progress must never break the fetch */ }
                 }
                 catch (Exception e) when (
                     !ct.IsCancellationRequested &&
@@ -99,7 +127,11 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
                     pageAttempt++;
                     if (pageAttempt > 5)
                         throw; // fail loudly — never a silent partial fetch
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(10 * pageAttempt, 60)), ct).ConfigureAwait(false);
+                    var waitSecs = Math.Min(10 * pageAttempt, 60);
+                    _logger?.LogWarning("stars fetch: page {Page} attempt {Attempt} failed ({Err}); retrying in {Wait}s",
+                        pagesDone + 1, pageAttempt, e.GetType().Name, waitSecs);
+                    try { onProgress?.Invoke(pagesDone, $"page {pagesDone + 1} retry {pageAttempt} after {e.GetType().Name}"); } catch { }
+                    await Task.Delay(TimeSpan.FromSeconds(waitSecs), ct).ConfigureAwait(false);
                     // same page; body stays null
                 }
             }
@@ -125,6 +157,10 @@ public sealed class HttpGitHubStarsClient : IGitHubStarsClient
 
         return all;
     }
+
+    /// <summary>Test seam: the actual HTTP send for one page attempt.</summary>
+    internal virtual Task<HttpResponseMessage> SendPageAsync(HttpRequestMessage request, CancellationToken ct) =>
+        _http.SendAsync(request, ct);
 
     /// <summary>
     /// Parses one page of GET /user/starred with Accept: application/vnd.github.star+json.

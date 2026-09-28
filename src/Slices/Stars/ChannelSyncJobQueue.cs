@@ -40,6 +40,14 @@ public sealed class ChannelSyncJobQueue : ISyncJobQueue
         await _store.UpdateAsync(job, ct).ConfigureAwait(false);
     }
 
+    public async Task ReportProgressAsync(Guid jobId, int pagesDone, string note, CancellationToken ct = default)
+    {
+        var job = await _store.GetAsync(jobId, ct).ConfigureAwait(false);
+        if (job is null || job.Status != StarsSyncJobStatus.Running) return;
+        job.ReportPageProgress(pagesDone, note);
+        await _store.UpdateAsync(job, ct).ConfigureAwait(false);
+    }
+
     public async Task FailAsync(Guid jobId, string error, CancellationToken ct = default)
     {
         var job = await _store.GetAsync(jobId, ct).ConfigureAwait(false)

@@ -23,6 +23,9 @@ public interface ISyncJobQueue
     /// <summary>Persist a failure (from either the queued or running state).</summary>
     Task FailAsync(Guid jobId, string error, CancellationToken ct = default);
 
+    /// <summary>Per-page fetch progress for a Running job (#67). Best-effort: failures are swallowed by callers.</summary>
+    Task ReportProgressAsync(Guid jobId, int pagesDone, string note, CancellationToken ct = default);
+
     /// <summary>Latest job for the tenant (any status), or null.</summary>
     Task<StarsSyncJob?> GetLatestAsync(string tenantId, CancellationToken ct = default);
 
