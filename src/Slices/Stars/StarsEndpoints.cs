@@ -111,7 +111,7 @@ public static class StarsEndpoints
         }).RequireAuthorization();
 
         // GET /stars?cursor=&limit= listing from IItemStore ordered by StarredAt desc
-        app.MapGet("/stars", async (HttpContext http, IServiceProvider sp, string? cursor, int limit = 20, CancellationToken ct = default) =>
+        app.MapMethods("/stars", ["GET", "HEAD"], async (HttpContext http, IServiceProvider sp, string? cursor, int limit = 20, CancellationToken ct = default) =>
         {
             var tid = await ResolveStarTenantIdAsync(http, ct);
             if (tid is null)

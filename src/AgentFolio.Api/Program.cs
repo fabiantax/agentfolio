@@ -210,7 +210,7 @@ app.MapGet("/weatherforecast", () =>
 });
 
 // Landing: the app IS the showcase portfolio chat.
-app.MapGet("/", () => Results.Redirect("/share/showcase", permanent: false));
+app.MapMethods("/", ["GET", "HEAD"], () => Results.Redirect("/share/showcase", permanent: false));
 
 app.MapChatApi();
 app.MapStarsApi();

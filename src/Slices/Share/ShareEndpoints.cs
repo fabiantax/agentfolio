@@ -65,7 +65,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
 
     public static IEndpointRouteBuilder MapShareApi(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/share/{slug}", async (HttpContext http, string slug, TenantRegistry registry, TenantShardRegistry shards, CancellationToken ct) =>
+        app.MapMethods("/share/{slug}", ["GET", "HEAD"], async (HttpContext http, string slug, TenantRegistry registry, TenantShardRegistry shards, CancellationToken ct) =>
         {
             TenantRecord? tenant;
             try

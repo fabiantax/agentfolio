@@ -102,7 +102,7 @@ public static class Auth2Endpoints
             return Results.Redirect("/", permanent: false);
         });
 
-        app.MapGet("/login", () => Results.Content(
+        app.MapMethods("/login", ["GET", "HEAD"], () => Results.Content(
             """
             <!doctype html>
             <html lang="en">
