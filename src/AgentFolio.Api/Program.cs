@@ -52,6 +52,26 @@ if (args.Contains("--migrate-single-to-tenant"))
 builder.Services.AddNimChatClient();
 
 // Stars: GitHub stars client from AGENTFOLIO_GITHUB_TOKEN (scoped, overridable in tests).
+// NER/RE extraction + GraphFusion ingest (#66 stage B wiring). All optional:
+// absent env = extraction stage skips (logged), sync/backfill unaffected.
+builder.Services.AddSingleton(sp =>
+{
+    var gliner = Environment.GetEnvironmentVariable("GLINER_URL") ?? "http://127.0.0.1:8095";
+    var relex = Environment.GetEnvironmentVariable("RELEX_URL") ?? "http://127.0.0.1:8090";
+    var gf = Environment.GetEnvironmentVariable("GF_A2A_URL") ?? "http://100.112.37.119:50052";
+    return new Slices.Stars.Extraction.GlinerBatchClient(gliner);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var relex = Environment.GetEnvironmentVariable("RELEX_URL") ?? "http://127.0.0.1:8090";
+    return new Slices.Stars.Extraction.RelexClient(relex);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var gf = Environment.GetEnvironmentVariable("GF_A2A_URL") ?? "http://100.112.37.119:50052";
+    return new Slices.Stars.Graph.GraphFusionClient(gf);
+});
+
 builder.Services.AddScoped<IGitHubStarsClient>(sp =>
     new HttpGitHubStarsClient(Environment.GetEnvironmentVariable("AGENTFOLIO_GITHUB_TOKEN")
         ?? throw new InvalidOperationException("AGENTFOLIO_GITHUB_TOKEN is not set."),
