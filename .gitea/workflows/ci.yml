@@ -88,6 +88,51 @@ jobs:
           fi
           ./scripts/arch-gate.sh
 
+  # Browser-E2E: the shipped bundle in the shipping engine (Chromium). Catches
+  # the env-parity class (Illegal-invocation #58, share-401 #59) that in-proc
+  # tests cannot see. Journey = unlock -> real docx upload -> cited streamed
+  # answer -> zero window page errors (tests/browser/run_journey.py).
+  # PR-only: main pushes are covered by merge-gate PR runs; keeps main fast.
+  browser-e2e:
+    if: gitea.event_name == 'pull_request'
+    runs-on: ci-k8s
+    # HOST-mode lane (see build-test comment): a container: key is fatal here.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libicu (runner image lacks it; dotnet FailFasts without)
+        run: dnf install -y libicu >/dev/null 2>&1 || dnf install -y libicu-*
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Playwright + Chromium + browser libs
+        timeout-minutes: 10
+        run: |
+          # Chromium's runtime libs. VERIFIED Fedora package names (rpm -q on the
+          # host): nspr provides libnspr4.so (run 38169/38318 failure); the
+          # previous list's `at-spi2-atp` and `libgbm` are NOT Fedora names
+          # (at-spi2-core and mesa-libgbm are) and one unknown name fails the
+          # whole dnf transaction — which the old >/dev/null||true silenced.
+          dnf install -y nss nspr atk at-spi2-atk at-spi2-core cups-libs libdrm libxkbcommon libXcomposite libXdamage libXfixes libXrandr mesa-libgbm pango cairo alsa-lib libxshmfence libX11 libxcb libXcursor libXi || true
+          python3 -m pip install --user playwright argon2-cffi
+          python3 -m playwright install chromium
+          # NO `playwright install-deps`: on this Fedora runner it detects an
+          # unsupported OS, falls back to ubuntu24.04 and shells out to apt-get
+          # (absent) -> exit 127 (measured run 37977).
+
+      - name: Browser journey (unlock -> docx upload -> cited answer, zero page errors)
+        timeout-minutes: 15
+        run: |
+          # setup-dotnet installs to /usr/share/dotnet on this runner (NOT
+          # $HOME/.dotnet) and prepends it to PATH — plain `dotnet` resolves.
+          # Do NOT export DOTNET=<homedir path>: the journey would Popen a
+          # nonexistent binary (measured run 38036, FileNotFoundError).
+          python3 tests/browser/run_journey.py
+
 # 2026-09-18 relesson (af-03 follow-up): a container:-key workflow (runs 31518/31519) is fatal on
 # the strix-host systemd runner too — it has no docker.sock either (docker inactive). The SDK the
 # container image would provide comes from setup-dotnet (10.0.x) instead; same major version.

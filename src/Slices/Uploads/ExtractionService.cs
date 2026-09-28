@@ -115,9 +115,39 @@ public sealed class ExtractionService
     {
         // Resolve the CURRENT runtime's dotnet (e.g. ~/.dotnet/dotnet) — 'dotnet' may not
         // be on PATH (measured: extractor never started because /usr/bin/dotnet absent).
-        var dotnet = Environment.GetEnvironmentVariable("DOTNET_ROOT") is string root
+        // Environment.ProcessPath = the dotnet binary that launched THIS process,
+        // apphost-aware. MainModule?.FileName is WRONG when the API runs from an
+        // apphost (dotnet run / published single exe): MainModule is the apphost
+        // 'AgentFolio.Api', and spawning it as 'the dotnet CLI' re-runs the API
+        // with the extractor argv — a second API instance that never extracts
+        // (measured: extraction_timeout + ':8293 address already in use' in the
+        // child, browser-E2E journey 2026-09-26). DOTNET_ROOT kept as an override
+        // for non-standard layouts.
+        // Resolve the dotnet CLI. Under `dotnet run` the API executes from its
+        // APPHOST (bin/.../AgentFolio.Api), and both Environment.ProcessPath and
+        // MainModule.FileName return that apphost — spawning it as "the dotnet
+        // CLI" re-runs the API with the extractor argv (a second API instance
+        // that never extracts; measured: extraction_timeout, port-bind errors in
+        // the child, browser-E2E journey 2026-09-26). So: DOTNET_ROOT override,
+        // then an apphost-aware ProcessPath (only when its file NAME is dotnet),
+        // then PATH resolution, then the executable's own directory.
+        static string? PathName(string? p) => string.IsNullOrEmpty(p) ? null : Path.GetFileName(p);
+        string? processPath = Environment.ProcessPath;
+        if (processPath is not null && !string.Equals(PathName(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
+            processPath = null; // apphost, not the CLI
+        string? pathDotnet = null;
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(dir)) continue;
+            var cand = Path.Combine(dir.Trim(), "dotnet");
+            if (File.Exists(cand)) { pathDotnet = cand; break; }
+        }
+        var dotnet = Environment.GetEnvironmentVariable("DOTNET_ROOT") is string root && File.Exists(Path.Combine(root, "dotnet"))
             ? Path.Combine(root, "dotnet")
-            : System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName ?? "dotnet";
+            : processPath
+              ?? pathDotnet
+              ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
+              ?? "dotnet";
         var psi = new ProcessStartInfo
         {
             FileName = dotnet,
