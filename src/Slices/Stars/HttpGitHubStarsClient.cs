@@ -50,6 +50,12 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
     public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct) =>
         GetAllStarredAsync(ct, onProgress: null);
 
+    internal static string? ParseNextLinkUrl(string linkHeader)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(linkHeader, "<([^>]+)>;\\s*rel=\"next\"");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
     /// <summary>Fetch all pages AND the raw per-repo payloads (#66 raw-first).</summary>
     public async Task<(IReadOnlyList<StarredRepoDto> Dtos, IReadOnlyDictionary<long, string> RawById)> GetAllStarredWithRawAsync(
         CancellationToken ct, Action<int, string>? onProgress = null)
@@ -160,11 +166,12 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
             if (linkHeader is not null)
             {
                 // Format: "<url>; rel=\"next\""
-                var idx = linkHeader.IndexOf("; rel=\"next\"");
-                if (idx >= 0)
-                {
-                    nextUrl = linkHeader.Substring(1, idx - 1);
-                }
+                // Parse <url>; rel="next" from the FIRST next-link. The old
+                // Substring(1, idx-1) kept the closing '>' (idx-1 is the '>'
+                // index; Substring length included it) -> "page=2>" -> GitHub
+                // served page 1 forever -> measured 111-page infinite loop
+                // on prod 2026-09-28. Regex-parse the URL instead.
+                nextUrl = ParseNextLinkUrl(linkHeader);
             }
         }
 
