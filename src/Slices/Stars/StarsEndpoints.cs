@@ -22,12 +22,13 @@ public static class StarsEndpoints
     /// </remarks>
     public static IEndpointRouteBuilder MapStarsApi(this IEndpointRouteBuilder app)
     {
+        // 202 + durable background job (#62): the sync NEVER binds to the HTTP
+        // request lifetime — a client disconnect cannot abort it.
         app.MapPost("/stars/sync", async (HttpContext http, IServiceProvider sp, CancellationToken ct) =>
         {
-            IGitHubStarsClient starsClient;
             try
             {
-                starsClient = sp.GetRequiredService<IGitHubStarsClient>();
+                _ = sp.GetRequiredService<IGitHubStarsClient>();
             }
             catch (InvalidOperationException)
             {
@@ -41,23 +42,25 @@ public static class StarsEndpoints
                 return Results.Json(new { error = "tenancy_unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
-            var shards = sp.GetRequiredService<TenantShardRegistry>();
-            var store = await shards.GetOrCreateShardAsync(tid, ct);
-            var objectStore = sp.GetService<AgentFolio.Platform.Storage.IObjectStore>();
-            var snapshotKey = StarsSnapshot.KeyFor(tid);
+            var queue = sp.GetRequiredService<ISyncJobQueue>();
+            if (await queue.IsBusyAsync(tid, ct))
+            {
+                var running = await queue.GetLatestAsync(tid, ct);
+                return Results.Json(new { error = "sync_already_running", jobId = running?.JobId },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
 
             var force = http.Request.Query["force"].ToString() is "1" or "true";
             var maxAgeMinutes = int.TryParse(http.Request.Query["maxAgeMinutes"], out var m) && m > 0 ? m : 360;
 
-            // Freshness pre-check against the object-storage snapshot. This is an
-            // EXPLICIT cache, not a fallback: only a fresh, non-empty snapshot skips
-            // the GitHub fetch; anything else (absent, stale, unreadable) fetches
-            // for real.
+            // Freshness pre-check (explicit cache, not a fallback): fresh non-empty
+            // snapshot -> no job needed at all.
+            var objectStore = sp.GetService<AgentFolio.Platform.Storage.IObjectStore>();
             if (!force && objectStore is not null)
             {
                 try
                 {
-                    await using var snapStream = await objectStore.GetAsync(snapshotKey, ct);
+                    await using var snapStream = await objectStore.GetAsync(StarsSnapshot.KeyFor(tid), ct);
                     if (snapStream is not null)
                     {
                         using var reader = new StreamReader(snapStream);
@@ -77,37 +80,34 @@ public static class StarsEndpoints
                         }
                     }
                 }
-                catch
-                {
-                    // Unreadable cache is not a dependency failure — fetch for real.
-                }
+                catch { /* unreadable cache -> fetch for real */ }
             }
 
-            var service = new StarsSyncService(starsClient, store);
-            StarsSyncResult result;
-            var cacheWritten = false;
-            if (objectStore is not null)
-            {
-                result = await service.SyncAsync(ct, async (repos, token) =>
+            var job = await queue.EnqueueAsync(tid, force, ct);
+            return Results.Json(new { jobId = job.JobId, status = job.Status.ToString().ToLowerInvariant() },
+                statusCode: StatusCodes.Status202Accepted);
+        }).RequireAuthorization();
+
+        // Job status for the owner UI / pollers.
+        app.MapGet("/stars/sync/status", async (HttpContext http, IServiceProvider sp, CancellationToken ct) =>
+        {
+            var tid = await ResolveStarTenantIdAsync(http, ct);
+            if (tid is null)
+                return Results.Json(new { error = "tenancy_unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            var job = await sp.GetRequiredService<ISyncJobQueue>().GetLatestAsync(tid, ct);
+            return job is null
+                ? Results.Json(new { error = "job_not_found" }, statusCode: StatusCodes.Status404NotFound)
+                : Results.Ok(new
                 {
-                    var payload = new StarsSnapshot(DateTimeOffset.UtcNow, repos).Serialize();
-                    await objectStore.PutAsync(snapshotKey, new MemoryStream(System.Text.Encoding.UTF8.GetBytes(payload)), "application/json", token);
-                    cacheWritten = true;
+                    jobId = job.JobId,
+                    status = job.Status.ToString().ToLowerInvariant(),
+                    fetched = job.Fetched,
+                    upserted = job.Upserted,
+                    unchanged = job.Unchanged,
+                    error = job.Error,
+                    startedAt = job.StartedAt,
+                    finishedAt = job.FinishedAt
                 });
-            }
-            else
-            {
-                result = await service.SyncAsync(ct);
-            }
-
-            return Results.Ok(new
-            {
-                result.Fetched,
-                result.Upserted,
-                result.Unchanged,
-                source = "github",
-                cacheWritten
-            });
         }).RequireAuthorization();
 
         // GET /stars?cursor=&limit= listing from IItemStore ordered by StarredAt desc

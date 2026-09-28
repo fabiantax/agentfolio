@@ -76,6 +76,34 @@ public sealed class StarsEndpointsTests : IDisposable
         return client;
     }
 
+    /// <summary>202-contract helper: trigger, poll /stars/sync/status until terminal, return final status body.</summary>
+    private static async Task<JsonElement> TriggerAndWaitAsync(HttpClient client, string path = "/stars/sync")
+    {
+        var response = await client.PostAsync(path, content: null);
+        for (var tries = 0; response.StatusCode == HttpStatusCode.Conflict && tries < 20; tries++)
+        {
+            await Task.Delay(250); // a previous job still terminal-ing — retry trigger (client behavior)
+            response = await client.PostAsync(path, content: null);
+        }
+        Assert.True(HttpStatusCode.Accepted == response.StatusCode,
+            $"expected 202 got {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        var accepted = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(accepted.TryGetProperty("jobId", out _), "202 must carry jobId");
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            var status = await client.GetAsync("/stars/sync/status");
+            Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+            var body = await status.Content.ReadFromJsonAsync<JsonElement>();
+            var state = body.GetProperty("status").GetString();
+            if (state is "completed" or "failed") return body;
+            await Task.Delay(100);
+        }
+        Assert.Fail("sync job did not reach a terminal state within 30s");
+        return default;
+    }
+
     [Fact]
     public async Task PostStarsSync_WithoutToken_Returns503GithubTokenNotConfigured()
     {
@@ -97,10 +125,9 @@ public sealed class StarsEndpointsTests : IDisposable
         await using var factory = Factory(fake);
         var client = LoggedInClient(factory);
 
-        var response = await client.PostAsync("/stars/sync", content: null);
+        var body = await TriggerAndWaitAsync(client);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("completed", body.GetProperty("status").GetString());
         Assert.Equal(2, body.GetProperty("fetched").GetInt32());
         Assert.True(body.GetProperty("upserted").GetInt32() > 0);
     }
@@ -113,8 +140,7 @@ public sealed class StarsEndpointsTests : IDisposable
         await using var factory = Factory(fake);
         var client = LoggedInClient(factory);
 
-        var sync = await client.PostAsync("/stars/sync", content: null);
-        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
+        await TriggerAndWaitAsync(client);
 
         var response = await client.GetAsync("/stars");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -136,11 +162,8 @@ public sealed class StarsEndpointsTests : IDisposable
         await using var factory = Factory(fake);
         var client = LoggedInClient(factory);
 
-        var first = await client.PostAsync("/stars/sync", content: null);
-        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        var firstBody = await first.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("github", firstBody.GetProperty("source").GetString());
-        Assert.True(firstBody.GetProperty("cacheWritten").GetBoolean());
+        var firstBody = await TriggerAndWaitAsync(client);
+        Assert.Equal("completed", firstBody.GetProperty("status").GetString());
 
         var second = await client.PostAsync("/stars/sync", content: null);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
@@ -158,12 +181,10 @@ public sealed class StarsEndpointsTests : IDisposable
         await using var factory = Factory(fake);
         var client = LoggedInClient(factory);
 
-        await client.PostAsync("/stars/sync", content: null); // prime the snapshot
+        await TriggerAndWaitAsync(client); // prime the snapshot
 
-        var forced = await client.PostAsync("/stars/sync?force=1", content: null);
-        Assert.Equal(HttpStatusCode.OK, forced.StatusCode);
-        var body = await forced.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("github", body.GetProperty("source").GetString());
+        var body = await TriggerAndWaitAsync(client, "/stars/sync?force=1");
+        Assert.Equal("completed", body.GetProperty("status").GetString());
         Assert.Equal(2, body.GetProperty("fetched").GetInt32());
     }
 }

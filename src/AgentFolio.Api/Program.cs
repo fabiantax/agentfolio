@@ -142,6 +142,15 @@ builder.Services.AddSingleton(sp => new ExtractionService(
     Environment.GetEnvironmentVariable(ExtractionService.ExtractorEnvVar)));
 builder.Services.AddHostedService<UploadExpiryEnforcer>();
 
+// Stars sync background jobs (#62): durable store + swappable queue seam +
+// in-process worker. The sync never binds to an HTTP request lifetime.
+builder.Services.AddSingleton<ISyncJobStore>(_ => new SqliteSyncJobStore(
+    Path.Combine(
+        Path.GetDirectoryName(Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB") ?? "agentfolio-global.db") ?? ".",
+        Path.GetFileName(Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB") ?? "agentfolio-global.db") + "-sync-jobs.db")));
+builder.Services.AddSingleton<ISyncJobQueue, ChannelSyncJobQueue>();
+builder.Services.AddHostedService<StarsSyncWorker>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

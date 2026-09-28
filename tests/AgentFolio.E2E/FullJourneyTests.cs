@@ -144,9 +144,21 @@ public class FullJourneyTests : IDisposable
 
         // ---- 7. Stars sync (demo-critical, #41): fake GitHub HTTP at the trust
         // boundary, real per-tenant shard store — showcase tenant gets the projections.
+        // 202 background-job contract (#62): trigger, poll status to terminal.
         var sync = await client.PostAsync("/stars/sync", content: null);
-        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
-        var syncBody = await sync.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.Accepted, sync.StatusCode);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        string syncBody;
+        while (true)
+        {
+            var status = await client.GetAsync("/stars/sync/status");
+            Assert.Equal(HttpStatusCode.OK, status.StatusCode);
+            syncBody = await status.Content.ReadAsStringAsync();
+            if (syncBody.Contains("\"status\":\"completed\"") || syncBody.Contains("\"status\":\"failed\""))
+                break;
+            Assert.True(DateTime.UtcNow < deadline, "stars sync job did not complete in 30s");
+            await Task.Delay(100);
+        }
         Assert.Contains("\"fetched\":2", syncBody);
         Assert.Contains("\"upserted\":2", syncBody);
 
