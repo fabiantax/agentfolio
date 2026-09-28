@@ -111,8 +111,10 @@ public static class StarsEndpoints
         }).RequireAuthorization();
 
         // GET /stars?cursor=&limit= listing from IItemStore ordered by StarredAt desc
-        app.MapMethods("/stars", ["GET", "HEAD"], async (HttpContext http, IServiceProvider sp, string? cursor, int limit = 20, CancellationToken ct = default) =>
+        app.MapMethods("/stars", ["GET", "HEAD"], async (HttpContext http, IServiceProvider sp, string? cursor, int limit = 100, CancellationToken ct = default) =>
         {
+            // Client-passed limits are clamped, never trusted: default 100, hard cap 500.
+            limit = Math.Clamp(limit, 1, 500);
             var tid = await ResolveStarTenantIdAsync(http, ct);
             if (tid is null)
             {
