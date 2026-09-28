@@ -132,6 +132,14 @@ CREATE TABLE IF NOT EXISTS stars (
     TopicsJson TEXT,
     StarredAt TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS stars_raw (
+    RepoId INTEGER NOT NULL PRIMARY KEY,
+    FullPayloadJson TEXT NOT NULL,
+    ReadmeText TEXT,
+    ReadmeFetchedAt TEXT,
+    FetchedAt TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_stars_RepoId ON stars(RepoId);
 
 CREATE TABLE IF NOT EXISTS saves (
@@ -274,6 +282,68 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
                     repo.RepoId, repo.FullName, repo.Description, repo.TopicsJson, repo.StarredAt.ToString("O"));
             },
             ct);
+
+    // ---- stars_raw (#66 raw-first) ----
+
+    public async Task UpsertStarRawAsync(long repoId, string fullPayloadJson, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO stars_raw (RepoId, FullPayloadJson, ReadmeText, ReadmeFetchedAt, FetchedAt)
+            VALUES ($id, $json, NULL, NULL, $now)
+            ON CONFLICT(RepoId) DO UPDATE SET
+                FullPayloadJson=excluded.FullPayloadJson,
+                FetchedAt=excluded.FetchedAt;
+            """;
+        cmd.Parameters.AddWithValue("$id", repoId);
+        cmd.Parameters.AddWithValue("$json", fullPayloadJson);
+        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task SetStarReadmeAsync(long repoId, string readmeText, DateTimeOffset fetchedAt, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE stars_raw SET ReadmeText=$t, ReadmeFetchedAt=$f WHERE RepoId=$id;";
+        cmd.Parameters.AddWithValue("$id", repoId);
+        cmd.Parameters.AddWithValue("$t", readmeText);
+        cmd.Parameters.AddWithValue("$f", fetchedAt.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<System.Collections.Generic.IReadOnlyList<long>> GetStarIdsMissingReadmeAsync(int limit, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT RepoId FROM stars_raw WHERE ReadmeText IS NULL ORDER BY FetchedAt LIMIT $lim;";
+        cmd.Parameters.AddWithValue("$lim", limit);
+        var result = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetInt64(0));
+        return result;
+    }
+
+    public async Task<StarredRepoRaw?> GetStarRawAsync(long repoId, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT RepoId, FullPayloadJson, ReadmeText, ReadmeFetchedAt, FetchedAt FROM stars_raw WHERE RepoId=$id;";
+        cmd.Parameters.AddWithValue("$id", repoId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+        return new StarredRepoRaw(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3)),
+            DateTimeOffset.Parse(reader.GetString(4)));
+    }
 
     public async Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default)
         => await AppendThenProjectAsync(

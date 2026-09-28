@@ -50,8 +50,21 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
     public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(CancellationToken ct) =>
         GetAllStarredAsync(ct, onProgress: null);
 
+    /// <summary>Fetch all pages AND the raw per-repo payloads (#66 raw-first).</summary>
+    public async Task<(IReadOnlyList<StarredRepoDto> Dtos, IReadOnlyDictionary<long, string> RawById)> GetAllStarredWithRawAsync(
+        CancellationToken ct, Action<int, string>? onProgress = null)
+    {
+        var rawById = new Dictionary<long, string>();
+        var dtos = await GetAllStarredAsync(ct, onProgress, onRawRepo: (id, json) => rawById[id] = json).ConfigureAwait(false);
+        return (dtos, rawById);
+    }
+
+    public Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(
+        CancellationToken ct, Action<int, string>? onProgress) =>
+        GetAllStarredAsync(ct, onProgress, onRawRepo: null);
+
     public async Task<IReadOnlyList<StarredRepoDto>> GetAllStarredAsync(
-        CancellationToken ct, Action<int, string>? onProgress)
+        CancellationToken ct, Action<int, string>? onProgress, Action<long, string>? onRawRepo = null)
     {
         var all = new List<StarredRepoDto>();
         var pagesDone = 0;
@@ -136,7 +149,7 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
                 }
             }
 
-            all.AddRange(ParseStarredPage(body));
+            all.AddRange(ParseStarredPage(body, onRawRepo));
 
             // Pace pagination: rapid back-to-back page fetches trip GitHub's
             // secondary rate limits (measured: ~30 pages in, then 403 storm).
@@ -170,7 +183,24 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
     /// plain string array; the GraphQL-style { nodes: [...] } object is accepted
     /// for robustness.
     /// </summary>
-    public static IReadOnlyList<StarredRepoDto> ParseStarredPage(string jsonBody)
+    /// <summary>
+    /// Fetch ONE repo README as raw text (#66 A2). Returns null on 404 (no README —
+    /// terminal state, not an error). Rate-safe: caller paces.
+    /// </summary>
+    internal virtual async Task<string?> GetReadmeAsync(string owner, string repo, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"repos/{owner}/{repo}/readme");
+        request.Headers.Accept.ParseAdd("application/vnd.github.raw");
+        using var resp = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+    }
+
+    public static IReadOnlyList<StarredRepoDto> ParseStarredPage(string jsonBody) =>
+        ParseStarredPage(jsonBody, onRawRepo: null);
+
+    public static IReadOnlyList<StarredRepoDto> ParseStarredPage(string jsonBody, Action<long, string>? onRawRepo)
     {
         using var doc = JsonDocument.Parse(jsonBody);
         var result = new List<StarredRepoDto>();
@@ -179,6 +209,7 @@ public class HttpGitHubStarsClient : IGitHubStarsClient
             var repoItem = item.TryGetProperty("repository", out var repoProp)
                 ? repoProp
                 : item.GetProperty("repo");
+            onRawRepo?.Invoke(repoItem.GetProperty("id").GetInt64(), repoItem.GetRawText());
             var topics = new List<string>();
             var topicsObj = repoItem.GetProperty("topics");
             if (topicsObj.ValueKind == JsonValueKind.Array)

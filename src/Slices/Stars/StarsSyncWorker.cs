@@ -82,6 +82,23 @@ public sealed class StarsSyncWorker : BackgroundService
                 await _queue.CompleteAsync(job.JobId, result.Fetched, result.Upserted, result.Unchanged,
                     CancellationToken.None).ConfigureAwait(false);
                 _current = null;
+
+                // README backfill rides every successful sync (#66 A2): one bounded, paced
+                // batch per sync. With ~1,969 repos and batchSize 50, full coverage takes
+                // ~40 syncs — or the next force-sync run. Restart-safe: cursor = store state.
+                try
+                {
+                    var backfill = new StarsReadmeBackfillService(starsClient, store,
+                        onProgress: (n, note) => { /* logged below via counter; progress fields already closed */ });
+                    var (rFetched, rMissing, rSkipped) = await backfill.RunBatchAsync(appStopping).ConfigureAwait(false);
+                    _logger.LogInformation("readme backfill batch: {Fetched} fetched, {Missing} without readme, {Skipped} skipped",
+                        rFetched, rMissing, rSkipped);
+                }
+                catch (OperationCanceledException) when (appStopping.IsCancellationRequested) { throw; }
+                catch (Exception bex)
+                {
+                    _logger.LogWarning(bex, "readme backfill batch failed (non-fatal; retries next sync)");
+                }
                 _logger.LogInformation("stars sync job {JobId} completed: {Fetched} fetched, {Upserted} upserted, {Unchanged} unchanged",
                     job.JobId, result.Fetched, result.Upserted, result.Unchanged);
             }

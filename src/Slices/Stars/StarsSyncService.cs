@@ -30,7 +30,27 @@ public sealed class StarsSyncService
         Func<IReadOnlyList<StarredRepoDto>, CancellationToken, Task>? snapshotSink = null,
         Action<int, string>? onProgress = null)
     {
-        var starredDtos = await _starsClient.GetAllStarredAsync(ct, onProgress).ConfigureAwait(false);
+        IReadOnlyList<StarredRepoDto> starredDtos;
+        IReadOnlyDictionary<long, string>? rawById = null;
+        if (_starsClient is HttpGitHubStarsClient http)
+        {
+            (starredDtos, rawById) = await http.GetAllStarredWithRawAsync(ct, onProgress).ConfigureAwait(false);
+        }
+        else
+        {
+            starredDtos = await _starsClient.GetAllStarredAsync(ct, onProgress).ConfigureAwait(false);
+        }
+
+        // Raw-first (#66): persist FULL payloads before any derived view. Best-effort —
+        // raw persistence failure must not fail the sync (it self-heals on the next run).
+        if (rawById is not null)
+        {
+            foreach (var (id, json) in rawById)
+            {
+                try { await _itemStore.UpsertStarRawAsync(id, json, ct).ConfigureAwait(false); }
+                catch { /* raw backfill is idempotent; next sync retries */ }
+            }
+        }
 
         // Canonicalize by RepoId (key for dedup)
         var grouped = starredDtos
