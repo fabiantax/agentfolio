@@ -97,7 +97,13 @@ public sealed class StarsEndpointsTests : IDisposable
             Assert.Equal(HttpStatusCode.OK, status.StatusCode);
             var body = await status.Content.ReadFromJsonAsync<JsonElement>();
             var state = body.GetProperty("status").GetString();
-            if (state is "completed" or "failed") return body;
+            if (state is "completed" or "failed")
+            {
+                Assert.True(state == "completed",
+                    $"sync reached terminal state '{state}': {body.GetProperty("error").GetString()} " +
+                    $"(pagesDone={body.GetProperty("pagesDone").GetInt32()}, lastPage={body.GetProperty("lastPageNote").GetString()})");
+                return body;
+            }
             await Task.Delay(100);
         }
         Assert.Fail("sync job did not reach a terminal state within 30s");

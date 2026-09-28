@@ -41,6 +41,18 @@ public class StarsRetrievalClient
         _graph = graph;
     }
 
+    /// <summary>
+    /// Stage-C2 pipeline: GF hybrid recall (topN candidates) -> ColBERT late-interaction
+    /// rerank (precision) -> topK hits. Reranker degradation falls back to GF order.
+    /// </summary>
+    public async Task<(IReadOnlyList<RetrievalHit> Hits, bool Reranked)> SearchWithRerankAsync(
+        RetrievalStrategy strategy, string query, ColbertReranker reranker,
+        int topK = 5, int recallN = 30, CancellationToken ct = default)
+    {
+        var candidates = await SearchAsync(strategy, query, recallN, ct).ConfigureAwait(false);
+        return await reranker.RerankAsync(query, candidates, topK, ct).ConfigureAwait(false);
+    }
+
     /// <summary>Raw GF round-trip: send a message, return the response text.</summary>
     public virtual async Task<string> SendAsync(string message, CancellationToken ct = default)
     {

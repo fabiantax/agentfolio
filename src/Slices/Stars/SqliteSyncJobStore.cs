@@ -137,7 +137,14 @@ public sealed class SqliteSyncJobStore : ISyncJobStore
         await using var db = new SqliteConnection(_connectionString);
         await db.OpenAsync(ct);
         using var cmd = db.CreateCommand();
-        cmd.CommandText = "UPDATE sync_jobs SET Status='Failed', Error=$e, FinishedAt=$f WHERE Status IN ('Queued','Running');";
+        // Grace window: parallel factory boots (xUnit, or a rolling deploy where the new
+        // host starts before the old stops) must NOT sweep each other's fresh jobs. Only
+        // rows old enough to predate this boot are crash debris. Measured: the flake was
+        // exactly a fresh-boot sweep killing another live instance's just-queued job.
+        cmd.CommandText = "UPDATE sync_jobs SET Status='Failed', Error=$e, FinishedAt=$f " +
+            "WHERE Status IN ('Queued','Running') AND StartedAt <= $cutoff;";
+        var cutoff = DateTimeOffset.UtcNow.AddSeconds(-30).ToString("O");
+        cmd.Parameters.AddWithValue("$cutoff", cutoff);
         cmd.Parameters.AddWithValue("$e", reason);
         cmd.Parameters.AddWithValue("$f", DateTimeOffset.UtcNow.ToString("O"));
         await cmd.ExecuteNonQueryAsync(ct);
