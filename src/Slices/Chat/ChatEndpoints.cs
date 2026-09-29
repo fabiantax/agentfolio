@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using AgentFolio.Agents;
+using AgentFolio.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -34,8 +35,15 @@ public static class ChatEndpoints
                 return Results.Json(new { error = "nim_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
             var agent = PortfolioAgentFactory.Create(client);
-            // Retrieval is not wired yet; server-side turns are retrievalRequired until it lands.
-            var tier = ChatTierSelector.Select(new ClientCapabilities(WebGPU: false), retrievalRequired: true).ToString();
+            var stars = http.RequestServices.GetService<IStarsSearch>();
+            IReadOnlyList<StarsSearchHit>? starHits = null;
+            if (stars is not null)
+            {
+                try { starHits = await stars.SearchAsync(request.Message, topK: 5, ct); }
+                catch { starHits = null; } // degrade-open: uncited answer beats failed chat
+            }
+            var tier = ChatTierSelector.Select(new ClientCapabilities(WebGPU: false),
+                retrievalRequired: starHits is null || starHits.Count == 0).ToString();
             var store = http.RequestServices.GetService<IConversationStore>();
 
             // Persist the user turn BEFORE streaming (best-effort; never breaks the stream).
@@ -114,6 +122,27 @@ public static class ChatEndpoints
                 }
             }
 
+            // Stars context (#66 stage D): prepend cited-candidate repos so the answer
+            // references real starred repos and can cite them via [STAR n] markers,
+            // resolved below into ChatCitations (same pattern as [DOC n]).
+            (string FullName, string Text)[]? ctxStars = null;
+            if (starHits is not null && starHits.Count > 0)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("Relevant starred repositories (cite the ones you use as [STAR 1], [STAR 2], ... in your answer):");
+                for (var i = 0; i < starHits.Count; i++)
+                {
+                    var h = starHits[i];
+                    sb.AppendLine($"--- [STAR {i + 1}] {h.FullName} ---");
+                    var text = (h.RerankText ?? h.Text);
+                    if (text.Length > 600) text = text[..600] + "…[truncated]";
+                    sb.AppendLine(text);
+                }
+                sb.AppendLine($"---{Environment.NewLine}{Environment.NewLine}Question: {request.Message}");
+                message = sb.ToString();
+                ctxStars = starHits.Select(h => (h.FullName, h.RerankText ?? h.Text)).ToArray();
+            }
+
             var session = await agent.CreateSessionAsync(ct);
             var assistantText = new StringBuilder();
             await foreach (var update in agent.RunStreamingAsync(message, session, cancellationToken: ct))
@@ -137,6 +166,22 @@ public static class ChatEndpoints
                         $"Session document {idx}{(url is null ? "" : $" — {ShortTitle(clean)}")}",
                         Snippet(clean, 240)));
                 }
+            }
+
+            if (ctxStars is not null)
+            {
+                var starIdx = 0;
+                foreach (var idx in ExtractCitedMarkers(assistantText.ToString(), "STAR"))
+                {
+                    if (idx < 1 || idx > ctxStars.Length) continue;
+                    var (fullName, text) = ctxStars[idx - 1];
+                    starIdx++;
+                    citations.Add(new ChatCitation(
+                        $"https://github.com/{fullName}",
+                        fullName,
+                        Snippet(text, 240)));
+                }
+                _ = starIdx; // ordered by citation appearance below via list order
             }
 
             var completion = new ChatCompletionEvent(conversationId, tier, citations);
@@ -181,9 +226,25 @@ public static class ChatEndpoints
         }
     }
 
-    /// <summary>Strips [DOC n] markers from a token before streaming it to the client.</summary>
+    /// <summary>Regex for [STAR n] markers (case-insensitive).</summary>
+    private static readonly System.Text.RegularExpressions.Regex StarMarkerRegex =
+        new(@"\[STAR\s+(\d+)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>Distinct, ordered indices cited via the given marker kind (e.g. "STAR").</summary>
+    internal static IEnumerable<int> ExtractCitedMarkers(string answer, string kind)
+    {
+        var rx = new System.Text.RegularExpressions.Regex(
+            $@"\[{System.Text.RegularExpressions.Regex.Escape(kind)}\s+(\d+)\]",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+        var seen = new HashSet<int>();
+        foreach (System.Text.RegularExpressions.Match m in rx.Matches(answer))
+            if (int.TryParse(m.Groups[1].Value, out var idx) && seen.Add(idx))
+                yield return idx;
+    }
+
+    /// <summary>Strips [DOC n] and [STAR n] markers from a token before streaming.</summary>
     internal static string CleanMarkers(string token)
-        => DocMarkerRegex.Replace(token, string.Empty);
+        => StarMarkerRegex.Replace(DocMarkerRegex.Replace(token, string.Empty), string.Empty);
 
     /// <summary>Pulls a `Source: http…` line from extracted doc text (uploader provenance).</summary>
     internal static string? ExtractSourceUrl(string text)

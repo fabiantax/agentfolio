@@ -72,6 +72,20 @@ builder.Services.AddSingleton(sp =>
     return new Slices.Stars.Graph.GraphFusionClient(gf);
 });
 
+// Stars retrieval for chat (#66 stage D): GF recall + ColBERT rerank over the
+// stars corpus. Degrade-open — if the services are absent, SearchAsync returns
+// empty and chat proceeds uncited (IStarsSearch contract).
+builder.Services.AddSingleton(sp =>
+{
+    var gf = Environment.GetEnvironmentVariable("GF_A2A_URL") ?? "http://100.112.37.119:50052";
+    var colbert = Environment.GetEnvironmentVariable("COLBERT_URL") ?? "http://127.0.0.1:8092";
+    return new Slices.Stars.Retrieval.StarsSearchAdapter(
+        new Slices.Stars.Retrieval.StarsRetrievalClient(gf),
+        new Slices.Stars.Retrieval.ColbertReranker(colbert));
+});
+builder.Services.AddSingleton<AgentFolio.Contracts.IStarsSearch>(sp =>
+    sp.GetRequiredService<Slices.Stars.Retrieval.StarsSearchAdapter>());
+
 builder.Services.AddScoped<IGitHubStarsClient>(sp =>
     new HttpGitHubStarsClient(Environment.GetEnvironmentVariable("AGENTFOLIO_GITHUB_TOKEN")
         ?? throw new InvalidOperationException("AGENTFOLIO_GITHUB_TOKEN is not set."),

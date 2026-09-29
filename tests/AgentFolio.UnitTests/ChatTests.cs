@@ -214,6 +214,112 @@ public class ChatTests : IDisposable
         }
     }
 
+    /// <summary>Fake model that cites [STAR 1] like an instructed model would.</summary>
+    private sealed class StarCitingFakeChatClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "answer [STAR 1]")));
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "answer ");
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "[STAR 1]");
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
+    }
+
+    /// <summary>Fake IStarsSearch returning one deterministic hit.</summary>
+    private sealed class FakeStarsSearch : IStarsSearch
+    {
+        public Task<IReadOnlyList<StarsSearchHit>> SearchAsync(string query, int topK = 5, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<StarsSearchHit>>(new[]
+            {
+                new StarsSearchHit("browser-use/browser-harness-js",
+                    "test harness for running automated browser checks",
+                    "test harness for running automated browser checks. Solves flaky end-to-end runs.", 42L),
+            });
+    }
+
+    [Fact]
+    public async Task PostChat_WithStarsSearch_CitationsResolveFromStarMarkers()
+    {
+        // #66 stage D: retrieval hits enter the prompt as [STAR n]; the answer's
+        // [STAR n] markers resolve into github citations. No doc-context needed.
+        Environment.SetEnvironmentVariable("AGENTFOLIO_DB_PATH", _dbPath);
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        {
+            b.ConfigureServices(services =>
+            {
+                services.RemoveAll<IConversationStore>();
+                services.AddSingleton<IConversationStore>(new SqliteConversationStore($"Data Source={_dbPath}"));
+                services.RemoveAll<IStarsSearch>();
+                services.AddSingleton<IStarsSearch>(new FakeStarsSearch());
+                services.AddKeyedSingleton<IChatClient>("nim", new StarCitingFakeChatClient());
+            });
+        });
+        var client = LoggedInClient(factory);
+
+        var response = await client.PostAsJsonAsync("/chat", new ChatRequest(null, "test harness for browser checks?", null));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+
+        // Streamed tokens carry NO raw [STAR markers (stripped before SSE).
+        Assert.DoesNotContain("[STAR", body[..body.IndexOf("\"citations\"", StringComparison.Ordinal)]);
+
+        // Completion resolves the cited star into a github citation.
+        var doneLine = body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .First(l => l.StartsWith("data: ") && l.Contains("\"citations\""));
+        using var doc = System.Text.Json.JsonDocument.Parse(doneLine["data: ".Length..]);
+        var cits = doc.RootElement.GetProperty("citations");
+        Assert.Equal(1, cits.GetArrayLength());
+        var cit = cits[0];
+        Assert.Equal("https://github.com/browser-use/browser-harness-js", cit.GetProperty("url").GetString());
+        Assert.Equal("browser-use/browser-harness-js", cit.GetProperty("title").GetString());
+        Assert.Contains("test harness", cit.GetProperty("snippet").GetString());
+    }
+
+    [Fact]
+    public async Task PostChat_WithStarsSearchUnavailable_AnswerUncited()
+    {
+        // Degrade-open: no IStarsSearch registered (or empty result) => chat succeeds
+        // with zero citations, never fails on retrieval.
+        Environment.SetEnvironmentVariable("AGENTFOLIO_DB_PATH", _dbPath);
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        {
+            b.ConfigureServices(services =>
+            {
+                services.RemoveAll<IConversationStore>();
+                services.AddSingleton<IConversationStore>(new SqliteConversationStore($"Data Source={_dbPath}"));
+                services.RemoveAll<IStarsSearch>();
+                services.AddSingleton<IStarsSearch>(new EmptyStarsSearch());
+                services.AddKeyedSingleton<IChatClient>("nim", new MultiChunkFakeChatClient());
+            });
+        });
+        var client = LoggedInClient(factory);
+
+        var response = await client.PostAsJsonAsync("/chat", new ChatRequest(null, "hello", null));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        var doneLine = body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .First(l => l.StartsWith("data: ") && l.Contains("\"citations\""));
+        using var doc = System.Text.Json.JsonDocument.Parse(doneLine["data: ".Length..]);
+        Assert.Equal(0, doc.RootElement.GetProperty("citations").GetArrayLength());
+    }
+
+    private sealed class EmptyStarsSearch : IStarsSearch
+    {
+        public Task<IReadOnlyList<StarsSearchHit>> SearchAsync(string query, int topK = 5, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<StarsSearchHit>>(Array.Empty<StarsSearchHit>());
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try { return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web)); }
