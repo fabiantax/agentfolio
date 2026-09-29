@@ -27,6 +27,12 @@ public enum RetrievalStrategy
     Vector,
     /// <summary>GF BM25F lexical scoring over Chunk nodes.</summary>
     Bm25,
+    /// <summary>
+    /// Keyword recall over Repo nodes (fullName/description OR-match) — #87: chunk
+    /// nodes are absent until the GF ingest sidecar lands (a2a write gate), and the
+    /// A/B harness's arm A (7/10 alone) ran exactly this leg.
+    /// </summary>
+    Repo,
     /// <summary>GF Cypher traversal: seed repo(s) -> mentions_repo / has_chunk hops -> rank chunks.</summary>
     MultiHop,
 }
@@ -61,13 +67,75 @@ public class StarsRetrievalClient
         return await reranker.RerankAsync(query, candidates, topK, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Raw GF round-trip: send a message, return the response text.</summary>
+    /// <summary>
+    /// Raw GF round-trip: wrap the query in the a2a JSON-RPC envelope
+    /// (wire-captured 2026-09-29 #87: {"method":"send_message","params":{"message":
+    /// {"parts":[{"text":...,"type":"text"}],"role":"user"}}}) and return the row
+    /// text from result.task.artifacts[].parts[].text. The previous bare
+    /// text/plain POST returned an empty 200 — every strategy silently got 0 rows.
+    /// </summary>
     public virtual async Task<string> SendAsync(string message, CancellationToken ct = default)
     {
-        using var content = new StringContent(message, System.Text.Encoding.UTF8, "text/plain");
+        // UnsafeRelaxedJsonEscaping: the default encoder escapes ' as \u0027 —
+        // valid JSON but the GF Cypher parser sees \u0027 inside string literals
+        // and fails to match repo names (measured #87).
+        var envelope = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            method = "send_message",
+            @params = new
+            {
+                message = new
+                {
+                    message_id = Guid.NewGuid().ToString("N"),
+                    parts = new[] { new { text = message, type = "text" } },
+                    role = "user",
+                },
+            },
+            id = Guid.NewGuid().ToString("N"),
+        }, new System.Text.Json.JsonSerializerOptions
+        {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+        using var content = new StringContent(envelope, System.Text.Encoding.UTF8, "application/json");
         using var resp = await _http.PostAsync("/", content, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return ExtractArtifactText(body);
+    }
+
+    /// <summary>Pull artifacts[].parts[].text out of the a2a JSON-RPC task response.</summary>
+    internal static string ExtractArtifactText(string body)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("result", out var result) &&
+                result.TryGetProperty("task", out var task) &&
+                task.TryGetProperty("artifacts", out var artifacts) &&
+                artifacts.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var art in artifacts.EnumerateArray())
+                {
+                    if (art.TryGetProperty("parts", out var parts) &&
+                        parts.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var part in parts.EnumerateArray())
+                        {
+                            if (part.TryGetProperty("text", out var text))
+                                sb.Append(text.GetString());
+                        }
+                    }
+                }
+                return sb.ToString();
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // fall through: return the raw body (older/plain responses)
+        }
+        return body;
     }
 
     /// <summary>
@@ -100,6 +168,10 @@ public class StarsRetrievalClient
                 RETURN 'Chunk' AS kind, c.chunkId AS id, c.text AS text, 1.0 AS score, c.repoId AS repoId, '' AS fullName
                 LIMIT {topK}
                 """,
+            // #87 keyword recall over Repo nodes (no Chunk dependency): OR the
+            // question's keywords across fullName/description, rank by how many
+            // distinct keywords a repo matched. Arm A of the A/B gate (7/10 alone).
+            RetrievalStrategy.Repo => BuildRepoRecallCypher(query, topK),
             // Vector: gf.embed + kNN against the HNSW index (requires `graphfusion index`).
             _ => $"""
                 USE GRAPH {_graph}
@@ -130,10 +202,16 @@ public class StarsRetrievalClient
     internal static IReadOnlyList<RetrievalHit> ParseRows(string raw)
     {
         var hits = new List<RetrievalHit>();
+        if (string.IsNullOrWhiteSpace(raw)) return hits;
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(raw);
-            if (doc.RootElement.TryGetProperty("rows", out var rows))
+            // GF returns either {"rows":[...]} or a bare JSON array (a2a artifact
+            // text is the bare array — wire-captured #87).
+            var rows = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? doc.RootElement
+                : doc.RootElement.TryGetProperty("rows", out var r) ? r : default;
+            if (rows.ValueKind == System.Text.Json.JsonValueKind.Array)
             {
                 foreach (var row in rows.EnumerateArray())
                 {
@@ -143,7 +221,7 @@ public class StarsRetrievalClient
                         row.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "",
                         row.TryGetProperty("score", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number ? s.GetDouble() : 0,
                         row.TryGetProperty("repoId", out var rid) && rid.ValueKind == System.Text.Json.JsonValueKind.Number ? rid.GetInt64() : null,
-                        row.TryGetProperty("fullName", out var fn) ? fn.GetString() : null));
+                        row.TryGetProperty("fullName", out var fn) && fn.ValueKind == System.Text.Json.JsonValueKind.String ? fn.GetString() : null));
                 }
             }
         }
@@ -156,6 +234,59 @@ public class StarsRetrievalClient
 
     // Escape order matters: backslashes FIRST, then quotes — otherwise the
     // backslash introduced by the quote-escape gets doubled again (measured:
-    // produced \\' instead of \' in the sent Cypher).
+    // produced \' instead of \' in the sent Cypher).
     internal static string Esc(string s) => s.Replace("\\", "\\\\").Replace("'", "\\'");
+
+    /// <summary>
+    /// Question keywords for Repo recall (#87): lowercase, strip stopwords and
+    /// short/generic terms, keep order, dedupe. Deliberately simple — recall only;
+    /// precision comes from the ColBERT rerank downstream.
+    /// </summary>
+    internal static IReadOnlyList<string> ExtractKeywords(string query)
+    {
+        string[] stopwords =
+        [
+            "the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "with", "is",
+            "are", "was", "were", "be", "been", "being", "it", "its", "this", "that",
+            "these", "those", "which", "what", "who", "whom", "whose", "how", "why",
+            "where", "when", "can", "could", "should", "would", "will", "shall", "may",
+            "might", "must", "do", "does", "did", "done", "have", "has", "had", "i",
+            "you", "we", "they", "he", "she", "my", "our", "your", "their", "help",
+            "helps", "helped", "run", "runs", "running", "use", "used", "using", "uses",
+            "get", "gets", "got", "make", "makes", "made", "some", "any", "all", "me",
+        ];
+        return query
+            .Split([' ', ',', ';', ':', '?', '!', '.', '(', ')', '"', '\''], StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => t.Trim().ToLowerInvariant())
+            .Where(t => t.Length >= 3 && !stopwords.Contains(t))
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>
+    /// Repo-node keyword recall cypher (#87): one MATCH with an OR chain per keyword
+    /// across fullName/description; score = count of DISTINCT keywords matched.
+    /// Empty keyword set -> impossible predicate, 0 rows (degrade-open upstream).
+    /// </summary>
+    private string BuildRepoRecallCypher(string query, int topK)
+    {
+        var kws = ExtractKeywords(query);
+        if (kws.Count == 0)
+        {
+            return $"USE GRAPH {_graph} MATCH (r:Repo) WHERE 1 = 0 RETURN 'Repo' AS kind, '' AS id, '' AS text, 0.0 AS score, r.repoId AS repoId, '' AS fullName LIMIT 0";
+        }
+        var ors = string.Join("\n           OR ", kws.Select(k =>
+            $"toLower(r.fullName) CONTAINS '{Esc(k)}' OR toLower(r.description) CONTAINS '{Esc(k)}'"));
+        var scored = string.Join(" +\n               ", kws.Select(k =>
+            $"(CASE WHEN toLower(r.fullName) CONTAINS '{Esc(k)}' THEN 1 ELSE 0 END + CASE WHEN toLower(r.description) CONTAINS '{Esc(k)}' THEN 1 ELSE 0 END)"));
+        return $"""
+            USE GRAPH {_graph}
+            MATCH (r:Repo)
+            WHERE {ors}
+            WITH r, ({scored}) AS kwScore
+            RETURN 'Repo' AS kind, r.fullName AS id, r.description AS text, toFloat(kwScore) AS score, r.repoId AS repoId, r.fullName AS fullName
+            ORDER BY score DESC
+            LIMIT {topK}
+            """;
+    }
 }

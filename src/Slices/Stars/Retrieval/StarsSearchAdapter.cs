@@ -26,8 +26,16 @@ public sealed class StarsSearchAdapter : IStarsSearch
     {
         try
         {
+            // Recall ladder (#87): chunk Bm25 first (richest text); Repo keyword
+            // recall when the graph has no chunk rows yet (a2a write gate) — both
+            // legs are GF queries, same result contract, arm A + arm D of the A/B gate.
             var (hits, _) = await _client.SearchWithRerankAsync(
                 RetrievalStrategy.Bm25, query, _reranker, topK, _recallN, ct).ConfigureAwait(false);
+            if (hits.Count == 0)
+            {
+                hits = (await _client.SearchWithRerankAsync(
+                    RetrievalStrategy.Repo, query, _reranker, topK, _recallN, ct).ConfigureAwait(false)).Hits;
+            }
             return hits
                 .Where(h => !string.IsNullOrWhiteSpace(h.RepoFullName) || h.RepoId is not null)
                 .Select(h => new StarsSearchHit(
