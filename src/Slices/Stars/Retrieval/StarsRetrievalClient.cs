@@ -7,7 +7,15 @@ public sealed record RetrievalHit(
     string Text,
     double Score,
     long? RepoId,
-    string? RepoFullName);
+    string? RepoFullName)
+{
+    /// <summary>
+    /// Optional richer document text for reranking (stage-C A/B winner, 2026-09-29:
+    /// desc + use_for + problems reranked 9/10 vs 7/10 desc-only). When set, the
+    /// reranker scores this instead of Text; Text stays the citation snippet.
+    /// </summary>
+    public string? RerankText { get; init; }
+}
 
 /// <summary>
 /// Retrieval strategy (owner directive 2026-09-28: ALL retrieval through GraphFusion —

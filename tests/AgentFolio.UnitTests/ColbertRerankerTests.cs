@@ -53,4 +53,44 @@ public class ColbertRerankerTests
         Assert.False(reranked);
         Assert.Empty(hits);
     }
+
+    [Fact]
+    public async Task Rerank_sends_enriched_rerank_text_when_present()
+    {
+        // A/B winner 2026-09-29 (9/10 vs 7/10): the reranker must score RerankText
+        // (desc + use_for + problems) when the hit carries one. Captured via a local
+        // stub endpoint echoing the recorded body; assert the outgoing payload.
+        string? sent = null;
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add("http://127.0.0.1:18092/");
+        listener.Start();
+        var serverTask = System.Threading.Tasks.Task.Run(async () =>
+        {
+            var ctx = await listener.GetContextAsync();
+            using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+            sent = await reader.ReadToEndAsync();
+            var body = System.Text.Encoding.UTF8.GetBytes(Body);
+            ctx.Response.ContentType = "application/json";
+            ctx.Response.ContentLength64 = body.Length;
+            await ctx.Response.OutputStream.WriteAsync(body);
+            ctx.Response.Close();
+        });
+
+        var candidates = new[]
+        {
+            new RetrievalHit("a", "Repo", "short desc", 1.0, 1, "t/repo")
+                { RerankText = "short desc. Used for CI pipelines. Solves flaky builds." },
+            new RetrievalHit("b", "Repo", "plain hit no enrichment", 0.9, 2, "t/plain"),
+        };
+        var reranker = new ColbertReranker("http://127.0.0.1:18092");
+        var (hits, reranked) = await reranker.RerankAsync("q", candidates, topK: 2);
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(reranked);
+        Assert.NotNull(sent);
+        Assert.Contains("Solves flaky builds.", sent);           // enriched text sent
+        Assert.Contains("plain hit no enrichment", sent);        // fallback for plain hits
+        Assert.DoesNotContain("\"short desc\"", sent.Replace("short desc. Used", "X")); // not raw Text for hit a
+        Assert.Equal("t/repo", hits[0].RepoFullName);            // recorded body order preserved
+    }
 }

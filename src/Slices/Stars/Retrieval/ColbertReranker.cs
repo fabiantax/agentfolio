@@ -33,7 +33,9 @@ public class ColbertReranker
             var payload = System.Text.Json.JsonSerializer.Serialize(new
             {
                 query,
-                documents = candidates.Select(c => new { text = c.Text }).ToArray(),
+                // A/B winner (2026-09-29, 9/10 vs 7/10): score the ENRICHED doc text
+                // (desc + use_for + problems) when the hit carries one.
+                documents = candidates.Select(c => new { text = c.RerankText ?? c.Text }).ToArray(),
             });
             using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             using var resp = await _http.PostAsync("rerank", content, ct).ConfigureAwait(false);
