@@ -113,7 +113,8 @@ public sealed class StarsSyncWorker : BackgroundService
                         await foreach (var s in store.QueryStarsAsync(appStopping).ConfigureAwait(false))
                             repoNames[s.RepoId] = s.FullName;
 
-                        var ingest = new Graph.StarsGraphIngestService(gfClient, ner,
+                        var ingest = new Graph.StarsGraphIngestService(
+                            Graph.StarsIngestTransportRouting.Select(gfClient), ner,
                             scope.ServiceProvider.GetService<Extraction.IRelationExtractor>());
                         // Bounded slice per sync: repos that HAVE a readme, NER-ingest up to 20/run.
                         var total = new Graph.StarsGraphIngestService.RunStats(0, 0, 0, 0, 0);
@@ -131,6 +132,11 @@ public sealed class StarsSyncWorker : BackgroundService
                             var fullName = repoNames.TryGetValue(rid, out var fn) ? fn : $"repo:{rid}";
                             var st = await ingest.IngestRepoAsync(rid, fullName, null, null, raw.ReadmeText,
                                 repoNames, appStopping).ConfigureAwait(false);
+                            if (st is null)
+                            {
+                                _logger.LogWarning("NER graph ingest: transport failed for {RepoId} — stage skipped this run", rid);
+                                continue;
+                            }
                             total = new Graph.StarsGraphIngestService.RunStats(
                                 total.Repos + st.Repos, total.Chunks + st.Chunks, total.Entities + st.Entities,
                                 total.Relations + st.Relations, total.MentionEdges + st.MentionEdges);
