@@ -284,7 +284,7 @@ footer a { color: var(--af-accent); text-decoration: none; }
       <div class="ev-title">VERIFY THIS DEMO</div>
       <ul>
         <li><a href="{{RepoUrl}}" rel="noopener noreferrer">Source &amp; history</a> — every commit, PR and review that built this page</li>
-        <li><a href="{{RepoUrl}}/actions">CI pipeline</a> — build 0-warnings, 112 unit + 2 E2E + 20 web tests, coverage line 72.8% / branch 65.2%</li>
+        <li><a href="{{RepoUrl}}/actions">CI pipeline</a> — build 0-warnings, 180 unit + 2 E2E + 20 web tests, coverage line 78.6% / branch 65.6%</li>
         <li>Eval — <a href="{{RepoUrl}}/raw/branch/main/eval/results/v2-citations.md">measured, 20 real questions</a>: citation-exactness 85% (was 0% pre-wiring; q03/q16/q19 misses documented), entity-F1 0.71, p50 4.3s on a local 4B model</li>
         <li>Architecture — .NET 10 vertical slices, CQRS-lite + event-log sourcing, Atlas graph-enforced boundaries, sandboxed doc extraction</li>
         <li>Deploy — Aspire orchestration, Helm/k8s target, self-hosted Git+CI on Tailscale</li>
