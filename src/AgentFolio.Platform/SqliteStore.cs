@@ -149,6 +149,15 @@ CREATE TABLE IF NOT EXISTS stars_graph_nodes (
     ChunkCount INTEGER NOT NULL DEFAULT 0,
     IngestedAt TEXT NOT NULL
 );
+
+-- #98 poison-repo quarantine: consecutive NER-stage failures per repo.
+-- >=3 strikes -> the worker's selection skips the repo; a successful ingest
+-- deletes the row (reset). One row per failing repo, not per attempt.
+CREATE TABLE IF NOT EXISTS stars_ingest_failures (
+    RepoId INTEGER NOT NULL PRIMARY KEY,
+    ConsecutiveFailures INTEGER NOT NULL DEFAULT 1,
+    LastFailureAt TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_stars_RepoId ON stars(RepoId);
 
 CREATE TABLE IF NOT EXISTS saves (
@@ -400,6 +409,46 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
             _ => 0L,
         };
         return Math.Max(maxEnd, seedFloor);
+    }
+
+    // ---- stars_ingest_failures (#98 poison-repo quarantine) ----
+
+    public async Task StarsGraphIngestFailedAsync(long repoId, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO stars_ingest_failures (RepoId, ConsecutiveFailures, LastFailureAt)
+            VALUES ($id, 1, $now)
+            ON CONFLICT(RepoId) DO UPDATE SET
+                ConsecutiveFailures = ConsecutiveFailures + 1, LastFailureAt = excluded.LastFailureAt;
+            """;
+        cmd.Parameters.AddWithValue("$id", repoId);
+        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<System.Collections.Generic.ISet<long>> StarsGraphIngestQuarantinedIdsAsync(CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT RepoId FROM stars_ingest_failures WHERE ConsecutiveFailures >= 3;";
+        var result = new HashSet<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetInt64(0));
+        return result;
+    }
+
+    public async Task StarsGraphIngestResetAsync(long repoId, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM stars_ingest_failures WHERE RepoId=$id;";
+        cmd.Parameters.AddWithValue("$id", repoId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default)

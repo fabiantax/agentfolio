@@ -50,4 +50,27 @@ public class StarsGraphIdBookTests : IDisposable
         Assert.Equal(2, (await _store.StarsGraphNodeBookedIdsAsync()).Count); // still 2 repos, not 3
         Assert.Equal(200_009L, await _store.StarsGraphNodeNextIdAsync(200_000)); // 200005..200008
     }
+
+    [Fact]
+    public async Task Quarantine_accrues_at_three_strikes_and_resets_on_success()
+    {
+        // Two strikes: not quarantined yet.
+        await _store.StarsGraphIngestFailedAsync(100);
+        await _store.StarsGraphIngestFailedAsync(100);
+        Assert.DoesNotContain(100L, await _store.StarsGraphIngestQuarantinedIdsAsync());
+
+        // Third strike: quarantined.
+        await _store.StarsGraphIngestFailedAsync(100);
+        var q = await _store.StarsGraphIngestQuarantinedIdsAsync();
+        Assert.Contains(100L, q);
+        Assert.DoesNotContain(200L, q); // other repos unaffected
+
+        // Success resets the counter entirely.
+        await _store.StarsGraphIngestResetAsync(100);
+        Assert.DoesNotContain(100L, await _store.StarsGraphIngestQuarantinedIdsAsync());
+
+        // And the counter starts over from 1 after a reset.
+        await _store.StarsGraphIngestFailedAsync(100);
+        Assert.DoesNotContain(100L, await _store.StarsGraphIngestQuarantinedIdsAsync());
+    }
 }

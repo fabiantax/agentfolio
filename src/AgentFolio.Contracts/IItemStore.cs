@@ -43,6 +43,21 @@ public interface IItemStore
     Task StarsGraphNodeBookedAsync(long repoId, long nodeIdBase, int chunkCount, CancellationToken ct = default)
         => throw new NotSupportedException("store has no stars_raw support");
 
+    /// <summary>#98 poison-repo quarantine: bump the consecutive-failure counter.
+    /// The caller decides what "3 strikes" means; the store just persists the count
+    /// (row auto-created, OnConflict upsert).</summary>
+    Task StarsGraphIngestFailedAsync(long repoId, CancellationToken ct = default)
+        => throw new NotSupportedException("store has no stars_raw support");
+
+    /// <summary>#98: repo ids with >=3 consecutive NER-stage failures (never booked).
+    /// Selection excludes these until a success resets them.</summary>
+    Task<System.Collections.Generic.ISet<long>> StarsGraphIngestQuarantinedIdsAsync(CancellationToken ct = default)
+        => throw new NotSupportedException("store has no stars_raw support");
+
+    /// <summary>#98: clear a repo's failure strikes (called on successful ingest).</summary>
+    Task StarsGraphIngestResetAsync(long repoId, CancellationToken ct = default)
+        => throw new NotSupportedException("store has no stars_raw support");
+
     /// <summary>#66 B5: repo ids already graph-ingested (the book's key set).</summary>
     Task<System.Collections.Generic.ISet<long>> StarsGraphNodeBookedIdsAsync(CancellationToken ct = default)
         => throw new NotSupportedException("store has no stars_raw support");

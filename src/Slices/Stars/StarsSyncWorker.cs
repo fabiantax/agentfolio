@@ -137,7 +137,17 @@ public sealed class StarsSyncWorker : BackgroundService
                             idSeed = long.Parse(seedRaw, System.Globalization.CultureInfo.InvariantCulture);
                         }
                         var booked = await store.StarsGraphNodeBookedIdsAsync(appStopping).ConfigureAwait(false);
+                        var quarantined = await store.StarsGraphIngestQuarantinedIdsAsync(appStopping).ConfigureAwait(false);
                         var nextId = await store.StarsGraphNodeNextIdAsync(idSeed, appStopping).ConfigureAwait(false);
+
+                        // #98: slice size is ops-tunable (default 20 = the measured shape).
+                        var sliceRaw = Environment.GetEnvironmentVariable("STARS_INGEST_SLICE");
+                        var slice = 20;
+                        if (!string.IsNullOrWhiteSpace(sliceRaw) && (!int.TryParse(sliceRaw, out slice) || slice < 1 || slice > 200))
+                        {
+                            _logger.LogWarning("STARS_INGEST_SLICE '{Raw}' invalid — using default 20", sliceRaw);
+                            slice = 20;
+                        }
 
                         var total = new Graph.StarsGraphIngestService.RunStats(0, 0, 0, 0, 0);
                         var processed = 0;
@@ -146,7 +156,7 @@ public sealed class StarsSyncWorker : BackgroundService
                             allIds.Add(s.RepoId);
                         var missing = new System.Collections.Generic.HashSet<long>(
                             await store.GetStarIdsMissingReadmeAsync(int.MaxValue, appStopping).ConfigureAwait(false));
-                        foreach (var rid in allIds.Where(id => !missing.Contains(id) && !booked.Contains(id)).Take(20))
+                        foreach (var rid in allIds.Where(id => !missing.Contains(id) && !booked.Contains(id) && !quarantined.Contains(id)).Take(slice))
                         {
                             if (appStopping.IsCancellationRequested) break;
                             var raw = await store.GetStarRawAsync(rid, appStopping).ConfigureAwait(false);
@@ -156,14 +166,21 @@ public sealed class StarsSyncWorker : BackgroundService
                                 repoNames, Convert.ToUInt64(nextId), appStopping).ConfigureAwait(false);
                             if (st is null)
                             {
+                                // #98: a NER-stage failure counts one strike; >=3 consecutive
+                                // fires failing quarantine the repo out of selection until a
+                                // success resets it (see booking below). Degrade-soft semantics
+                                // unchanged: the slice keeps going.
+                                await store.StarsGraphIngestFailedAsync(rid, appStopping).ConfigureAwait(false);
                                 _logger.LogWarning("NER graph ingest: transport failed for {RepoId} — stage skipped this run", rid);
                                 continue;
                             }
                             // Book the ACTUAL span the batch used; next repo continues
                             // contiguously. A failed booking self-heals: batch ids are
                             // deterministic (stars-repo:N), so a re-run replays the sidecar
-                            // ledger and books again.
+                            // ledger and books again. A success also resets any failure
+                            // strikes (repo ingested = not a poison repo).
                             await store.StarsGraphNodeBookedAsync(rid, nextId, st.Chunks, appStopping).ConfigureAwait(false);
+                            await store.StarsGraphIngestResetAsync(rid, appStopping).ConfigureAwait(false);
                             nextId += 1 + st.Chunks;
                             total = new Graph.StarsGraphIngestService.RunStats(
                                 total.Repos + st.Repos, total.Chunks + st.Chunks, total.Entities + st.Entities,
