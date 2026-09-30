@@ -19,6 +19,9 @@ public static class StarsEndpoints
     /// <remarks>
     /// Requires cookie auth (enforced by caller wiring). Just builds the route;
     /// authentication is handled by the global cookie middleware.
+    /// Ops exception (2026-09-30): X-Admin-Token == AGENTFOLIO_ADMIN_TOKEN also
+    /// passes — headless automation (loopit agents, cron) cannot hold the
+    /// interactive cookie session. Mirrors the TenancyEndpoints admin gate.
     /// </remarks>
     public static IEndpointRouteBuilder MapStarsApi(this IEndpointRouteBuilder app)
     {
@@ -26,14 +29,27 @@ public static class StarsEndpoints
         // request lifetime — a client disconnect cannot abort it.
         app.MapPost("/stars/sync", async (HttpContext http, IServiceProvider sp, CancellationToken ct) =>
         {
-            try
+            var adminToken = Environment.GetEnvironmentVariable("AGENTFOLIO_ADMIN_TOKEN");
+            var viaAdmin = !string.IsNullOrEmpty(adminToken)
+                && string.Equals(http.Request.Headers["X-Admin-Token"].ToString(), adminToken, StringComparison.Ordinal);
+            if (!viaAdmin)
             {
-                _ = sp.GetRequiredService<IGitHubStarsClient>();
-            }
-            catch (InvalidOperationException)
-            {
-                // AGENTS.md rule 1: no silent fallback — name the missing dependency.
-                return Results.Json(new { error = "github_token_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+                try
+                {
+                    _ = sp.GetRequiredService<IGitHubStarsClient>();
+                }
+                catch (InvalidOperationException)
+                {
+                    // AGENTS.md rule 1: no silent fallback — name the missing dependency.
+                    return Results.Json(new { error = "github_token_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+
+                if (http.User.Identity is not { IsAuthenticated: true })
+                {
+                    // Same shape as the auth middleware would produce; keeps the
+                    // route honest for cookie-less callers without leaking state.
+                    return Results.Json(new { error = "auth_required" }, statusCode: StatusCodes.Status401Unauthorized);
+                }
             }
 
             var tid = await ResolveStarTenantIdAsync(http, ct);
@@ -86,7 +102,7 @@ public static class StarsEndpoints
             var job = await queue.EnqueueAsync(tid, force, ct);
             return Results.Json(new { jobId = job.JobId, status = job.Status.ToString().ToLowerInvariant() },
                 statusCode: StatusCodes.Status202Accepted);
-        }).RequireAuthorization();
+        }).AllowAnonymous();
 
         // Job status for the owner UI / pollers.
         app.MapGet("/stars/sync/status", async (HttpContext http, IServiceProvider sp, CancellationToken ct) =>
