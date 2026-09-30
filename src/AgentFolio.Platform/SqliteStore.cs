@@ -140,6 +140,15 @@ CREATE TABLE IF NOT EXISTS stars_raw (
     ReadmeFetchedAt TEXT,
     FetchedAt TEXT NOT NULL
 );
+
+-- #66 B5 sidecar id-book: dense node-id allocator + ingested marker. One row per
+-- graph-ingested repo (NodeIdBase = repo node id; chunk i = NodeIdBase+1+i).
+CREATE TABLE IF NOT EXISTS stars_graph_nodes (
+    RepoId INTEGER NOT NULL PRIMARY KEY,
+    NodeIdBase INTEGER NOT NULL,
+    ChunkCount INTEGER NOT NULL DEFAULT 0,
+    IngestedAt TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_stars_RepoId ON stars(RepoId);
 
 CREATE TABLE IF NOT EXISTS saves (
@@ -343,6 +352,54 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
             reader.IsDBNull(2) ? null : reader.GetString(2),
             reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3)),
             DateTimeOffset.Parse(reader.GetString(4)));
+    }
+
+    // ---- stars_graph_nodes (#66 B5 sidecar id-book) ----
+
+    public async Task StarsGraphNodeBookedAsync(long repoId, long nodeIdBase, int chunkCount, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO stars_graph_nodes (RepoId, NodeIdBase, ChunkCount, IngestedAt)
+            VALUES ($id, $base, $chunks, $now)
+            ON CONFLICT(RepoId) DO UPDATE SET
+                NodeIdBase=excluded.NodeIdBase, ChunkCount=excluded.ChunkCount, IngestedAt=excluded.IngestedAt;
+            """;
+        cmd.Parameters.AddWithValue("$id", repoId);
+        cmd.Parameters.AddWithValue("$base", nodeIdBase);
+        cmd.Parameters.AddWithValue("$chunks", chunkCount);
+        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<System.Collections.Generic.ISet<long>> StarsGraphNodeBookedIdsAsync(CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT RepoId FROM stars_graph_nodes;";
+        var result = new HashSet<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result.Add(reader.GetInt64(0));
+        return result;
+    }
+
+    public async Task<long> StarsGraphNodeNextIdAsync(long seedFloor, CancellationToken ct = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(MAX(NodeIdBase + 1 + ChunkCount), 0) FROM stars_graph_nodes;";
+        var maxEnd = await cmd.ExecuteScalarAsync(ct) switch
+        {
+            null or DBNull => 0L,
+            long v => v,
+            IConvertible c => c.ToInt64(System.Globalization.CultureInfo.InvariantCulture),
+            _ => 0L,
+        };
+        return Math.Max(maxEnd, seedFloor);
     }
 
     public async Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default)

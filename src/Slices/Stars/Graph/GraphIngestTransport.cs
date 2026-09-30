@@ -6,18 +6,22 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// One batch entry for the graphfusion-ingest-cli sidecar (#89 pinned contract).
+/// One batch entry for the graphfusion-ingest-cli sidecar (#89 contract, numeric-id
+/// revision). The first real sync (job 0f44f597) 422'd every batch: the GF CLI
+/// demands base_id:u8 and u64 node/edge ids — string ids like "repo:7" never parse.
+/// External identity (repo:N, repo:N:i) rides in properties only, because
+/// GraphStorage renumbers ids dense 0..n on open (compact_nodes finding).
 /// Batch: {"batch_id","source","base_id","graph","store_path","nodes","edges"}.
 /// Summary (stdout): {"batch_id","ok","nodes","local_edges","cross_base_edges","errors"}.
 /// </summary>
-public sealed record IngestNode(string Id, string NodeType, string Name, Dictionary<string, object?> Properties);
+public sealed record IngestNode(ulong Id, string NodeType, string Name, Dictionary<string, object?> Properties);
 
-public sealed record IngestEdge(string SourceId, string TargetId, string EdgeType, Dictionary<string, object?> Properties);
+public sealed record IngestEdge(ulong SourceId, ulong TargetId, string EdgeType, Dictionary<string, object?> Properties);
 
 public sealed record IngestBatch(
     string BatchId,
     string Source,
-    string BaseId,
+    byte BaseId,
     string Graph,
     string StorePath,
     IReadOnlyList<IngestNode> Nodes,
@@ -41,7 +45,7 @@ public sealed record IngestSummary(
 /// </summary>
 public interface IGraphIngestTransport
 {
-    Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, CancellationToken ct = default);
+    Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, ulong sidecarIdBase = 0, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -58,12 +62,24 @@ public sealed class StarsIngestBatch
     public IReadOnlyList<Chunking.ReadmeChunk>? Chunks { get; init; }
     public IReadOnlyList<(long FromRepoId, long ToRepoId)>? Mentions { get; init; }
 
-    /// <summary>Build the node/edge payload per the #89 contract shape.</summary>
-    public IngestBatch ToIngestBatch(long repoId)
+    /// <summary>
+    /// Build the node/edge payload for the numeric-id sidecar contract. GF sizes
+    /// CSR/adjacency/embedding tables at O(max node id) (database.rs train/cleora
+    /// paths), so ids MUST stay dense across batches: the caller allocates a
+    /// contiguous span [idBase, idBase+1+chunks) from the persistent id-book
+    /// (stars_graph_nodes). Layout: repo node = idBase, chunk i = idBase+1+i.
+    /// External identity (repo:N, repo:N:i) rides in node name + properties only —
+    /// GraphStorage renumbers ids on open (compact_nodes finding).
+    /// Mentions are NOT serialized here: the CLI validates edge endpoints in-batch
+    /// and raw repo ids are meaningless in the dense id space (they collide with
+    /// chunk ids); mentions stay on the legacy a2a transport until GF supports
+    /// cross-batch edges.
+    /// </summary>
+    public IngestBatch ToIngestBatch(long repoId, ulong idBase)
     {
         var nodes = new List<IngestNode>
         {
-            new(RepoNodeId, "Repo", FullName, new Dictionary<string, object?>
+            new(idBase, "Repo", FullName, new Dictionary<string, object?>
             {
                 ["repoId"] = repoId,
                 ["fullName"] = FullName,
@@ -76,27 +92,24 @@ public sealed class StarsIngestBatch
         {
             foreach (var c in Chunks)
             {
-                var chunkId = $"{RepoNodeId}:{c.Index}";
-                nodes.Add(new IngestNode(chunkId, "Chunk", chunkId, new Dictionary<string, object?>
+                var chunkNum = idBase + 1UL + Convert.ToUInt64(c.Index);
+                var chunkId = $"{RepoNodeId}:{c.Index}"; // external identity lives in properties/name
+                nodes.Add(new IngestNode(chunkNum, "Chunk", chunkId, new Dictionary<string, object?>
                 {
                     ["text"] = c.Text,
                     ["headingPath"] = c.HeadingPath,
                     ["repoId"] = RepoNodeId,
+                    ["chunkId"] = chunkId,
                 }));
-                edges.Add(new IngestEdge(RepoNodeId, chunkId, "has_chunk", new Dictionary<string, object?>()));
+                edges.Add(new IngestEdge(idBase, chunkNum, "has_chunk", new Dictionary<string, object?>()));
                 if (c.Index > 0)
-                    edges.Add(new IngestEdge($"{RepoNodeId}:{c.Index - 1}", chunkId, "next", new Dictionary<string, object?>()));
+                    edges.Add(new IngestEdge(chunkNum - 1, chunkNum, "next", new Dictionary<string, object?>()));
             }
-        }
-        if (Mentions is not null)
-        {
-            foreach (var (fromId, toId) in Mentions)
-                edges.Add(new IngestEdge($"repo:{fromId}", $"repo:{toId}", "mentions_repo", new Dictionary<string, object?>()));
         }
         return new IngestBatch(
             BatchId: $"stars-{RepoNodeId}",
             Source: "agentfolio-stars",
-            BaseId: RepoNodeId,
+            BaseId: 0,
             Graph: "agentfolio_stars",
             StorePath: Environment.GetEnvironmentVariable("GF_INGEST_STORE_PATH") ?? "agentfolio_stars",
             Nodes: nodes,
@@ -111,7 +124,7 @@ public sealed class StarsIngestBatch
 /// </summary>
 public sealed class A2aIngestTransport(GraphFusionClient client) : IGraphIngestTransport
 {
-    public async Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, CancellationToken ct = default)
+    public async Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, ulong sidecarIdBase = 0, CancellationToken ct = default)
     {
         await client.ExecuteAsync(StarsGraphCypher.UpsertRepo(ExtractRepoId(batch.RepoNodeId), batch.FullName, batch.Description, batch.Language), ct).ConfigureAwait(false);
         if (batch.Chunks is not null)
@@ -176,9 +189,9 @@ public sealed class GraphFusionIngestCliTransport : IGraphIngestTransport
         _runProcess = runProcess ?? RunProcessAsync;
     }
 
-    public async Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, CancellationToken ct = default)
+    public async Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, ulong sidecarIdBase = 0, CancellationToken ct = default)
     {
-        var ingest = batch.ToIngestBatch(A2aIngestTransport.ExtractRepoId(batch.RepoNodeId));
+        var ingest = batch.ToIngestBatch(A2aIngestTransport.ExtractRepoId(batch.RepoNodeId), sidecarIdBase);
         var payload = JsonSerializer.Serialize(ingest, JsonOpts);
         var result = await _runProcess(_cliPath, payload, ct).ConfigureAwait(false);
         if (result.ExitCode != 0)

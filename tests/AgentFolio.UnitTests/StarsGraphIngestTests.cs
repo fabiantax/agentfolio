@@ -27,10 +27,12 @@ public class StarsGraphIngestTests
         public System.Collections.Generic.List<StarsIngestBatch> Batches { get; } = new();
         public IngestSummary? SummaryToReturn { get; set; }
         public Exception? ThrowOnShip { get; set; }
+        public ulong LastIdBase { get; private set; }
 
-        public System.Threading.Tasks.Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, System.Threading.CancellationToken ct = default)
+        public System.Threading.Tasks.Task<IngestSummary?> ShipAsync(StarsIngestBatch batch, ulong sidecarIdBase = 0, System.Threading.CancellationToken ct = default)
         {
             if (ThrowOnShip is not null) throw ThrowOnShip;
+            LastIdBase = sidecarIdBase;
             Batches.Add(batch);
             return System.Threading.Tasks.Task.FromResult(SummaryToReturn);
         }
@@ -124,19 +126,22 @@ public class StarsGraphIngestTests
 
     // ---- #89: sidecar contract ----
 
-    /// <summary>Pinned #89 wire contract (golden shape — changes here must be deliberate).</summary>
+    /// <summary>Pinned #89 wire contract, numeric-id revision (golden shape — changes here must be deliberate).
+    /// Ids are a dense contiguous span allocated by the caller: repo node = idBase,
+    /// chunk i = idBase+1+i (GF sizes CSR/adjacency tables at O(max node id)).
+    /// External identity (repo:N, repo:N:i) lives in node names + properties.</summary>
     private static string ExpectedGoldenBatchJson =>
-        "{\"batch_id\":\"stars-repo:7\",\"source\":\"agentfolio-stars\",\"base_id\":\"repo:7\"," +
+        "{\"batch_id\":\"stars-repo:7\",\"source\":\"agentfolio-stars\",\"base_id\":0," +
         "\"graph\":\"agentfolio_stars\",\"store_path\":\"agentfolio_stars\"," +
         "\"nodes\":[" +
-        "{\"id\":\"repo:7\",\"node_type\":\"Repo\",\"name\":\"o/n\",\"properties\":{\"repoId\":7,\"fullName\":\"o/n\",\"description\":\"d\",\"language\":\"C#\"}}," +
-        "{\"id\":\"repo:7:0\",\"node_type\":\"Chunk\",\"name\":\"repo:7:0\",\"properties\":{\"text\":\"alpha\",\"headingPath\":\"A\",\"repoId\":\"repo:7\"}}," +
-        "{\"id\":\"repo:7:1\",\"node_type\":\"Chunk\",\"name\":\"repo:7:1\",\"properties\":{\"text\":\"beta\",\"headingPath\":\"A > B\",\"repoId\":\"repo:7\"}}" +
+        "{\"id\":41,\"node_type\":\"Repo\",\"name\":\"o/n\",\"properties\":{\"repoId\":7,\"fullName\":\"o/n\",\"description\":\"d\",\"language\":\"C#\"}}," +
+        "{\"id\":42,\"node_type\":\"Chunk\",\"name\":\"repo:7:0\",\"properties\":{\"text\":\"alpha\",\"headingPath\":\"A\",\"repoId\":\"repo:7\",\"chunkId\":\"repo:7:0\"}}," +
+        "{\"id\":43,\"node_type\":\"Chunk\",\"name\":\"repo:7:1\",\"properties\":{\"text\":\"beta\",\"headingPath\":\"A > B\",\"repoId\":\"repo:7\",\"chunkId\":\"repo:7:1\"}}" +
         "]," +
         "\"edges\":[" +
-        "{\"source_id\":\"repo:7\",\"target_id\":\"repo:7:0\",\"edge_type\":\"has_chunk\",\"properties\":{}}," +
-        "{\"source_id\":\"repo:7\",\"target_id\":\"repo:7:1\",\"edge_type\":\"has_chunk\",\"properties\":{}}," +
-        "{\"source_id\":\"repo:7:0\",\"target_id\":\"repo:7:1\",\"edge_type\":\"next\",\"properties\":{}}" +
+        "{\"source_id\":41,\"target_id\":42,\"edge_type\":\"has_chunk\",\"properties\":{}}," +
+        "{\"source_id\":41,\"target_id\":43,\"edge_type\":\"has_chunk\",\"properties\":{}}," +
+        "{\"source_id\":42,\"target_id\":43,\"edge_type\":\"next\",\"properties\":{}}" +
         "]}";
 
     [Fact]
@@ -159,9 +164,47 @@ public class StarsGraphIngestTests
         };
 
         var json = System.Text.Json.JsonSerializer.Serialize(
-            batch.ToIngestBatch(7), SidecarJson.Options);
+            batch.ToIngestBatch(7, idBase: 41), SidecarJson.Options);
 
         Assert.Equal(ExpectedGoldenBatchJson, json);
+    }
+
+    [Fact]
+    public void Batch_ids_form_dense_contiguous_span_from_idBase()
+    {
+        var batch = new StarsIngestBatch
+        {
+            RepoNodeId = "repo:7",
+            FullName = "o/n",
+            Chunks = new[]
+            {
+                new ReadmeChunk(7, 0, "alpha", "A", 0, 5),
+                new ReadmeChunk(7, 1, "beta", "A > B", 6, 10),
+            },
+        };
+
+        var ingest = batch.ToIngestBatch(7, idBase: 41);
+
+        Assert.Equal(41UL, ingest.Nodes[0].Id);
+        Assert.Equal(new ulong[] { 42, 43 }, ingest.Nodes.Skip(1).Select(n => n.Id));
+        Assert.Equal(
+            new[] { (41UL, 42UL), (41UL, 43UL), (42UL, 43UL) },
+            ingest.Edges.Select(e => (e.SourceId, e.TargetId)));
+    }
+
+    [Fact]
+    public async Task Sidecar_path_never_ships_mention_batches()
+    {
+        var transport = new RecordingTransport();
+        var svc = new StarsGraphIngestService(transport, new FakeNer());
+        var names = new System.Collections.Generic.Dictionary<long, string> { [8] = "knowledgator/GLiFormer" };
+        var md = "See https://github.com/knowledgator/GLiFormer.";
+        var stats = await svc.IngestRepoAsync(7, "o/n", null, null, md, names, sidecarIdBase: 41);
+
+        Assert.NotNull(stats);
+        Assert.Equal(0, stats.MentionEdges); // cross-batch mentions stay off the sidecar path
+        Assert.Single(transport.Batches); // main batch only
+        Assert.Equal(41UL, transport.LastIdBase); // allocated span rode through to the transport
     }
 
     [Fact]

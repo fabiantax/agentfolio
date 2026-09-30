@@ -113,10 +113,32 @@ public sealed class StarsSyncWorker : BackgroundService
                         await foreach (var s in store.QueryStarsAsync(appStopping).ConfigureAwait(false))
                             repoNames[s.RepoId] = s.FullName;
 
+                        var transport = Graph.StarsIngestTransportRouting.Select(gfClient);
                         var ingest = new Graph.StarsGraphIngestService(
-                            Graph.StarsIngestTransportRouting.Select(gfClient), ner,
+                            transport, ner,
                             scope.ServiceProvider.GetService<Extraction.IRelationExtractor>());
-                        // Bounded slice per sync: repos that HAVE a readme, NER-ingest up to 20/run.
+                        // Bounded slice per sync: repos with a readme NOT yet graph-ingested,
+                        // up to 20/run — the sidecar id-book doubles as the ingest cursor
+                        // (booked = already in the graph), so the slice advances every fire.
+                        // Dense-id allocation: GF sizes CSR/adjacency/embedding tables at
+                        // O(max node id), so node ids must stay contiguous across batches.
+                        // Repo node = base, chunk i = base+1+i, spans allocated from
+                        // stars_graph_nodes; seed floor = GF_INGEST_ID_SEED (the existing
+                        // store's max node id). Fail-loud when the sidecar is active and the
+                        // seed is unset: a 0 seed would collide with pre-existing nodes.
+                        var idSeed = 0L;
+                        if (transport is Graph.GraphFusionIngestCliTransport)
+                        {
+                            var seedRaw = Environment.GetEnvironmentVariable("GF_INGEST_ID_SEED");
+                            if (string.IsNullOrWhiteSpace(seedRaw))
+                                throw new InvalidOperationException(
+                                    "GF_INGEST_ID_SEED is required with the sidecar ingest transport — " +
+                                    "set it to the graph store's current max node id (a 0 seed would collide).");
+                            idSeed = long.Parse(seedRaw, System.Globalization.CultureInfo.InvariantCulture);
+                        }
+                        var booked = await store.StarsGraphNodeBookedIdsAsync(appStopping).ConfigureAwait(false);
+                        var nextId = await store.StarsGraphNodeNextIdAsync(idSeed, appStopping).ConfigureAwait(false);
+
                         var total = new Graph.StarsGraphIngestService.RunStats(0, 0, 0, 0, 0);
                         var processed = 0;
                         var allIds = new System.Collections.Generic.List<long>();
@@ -124,27 +146,33 @@ public sealed class StarsSyncWorker : BackgroundService
                             allIds.Add(s.RepoId);
                         var missing = new System.Collections.Generic.HashSet<long>(
                             await store.GetStarIdsMissingReadmeAsync(int.MaxValue, appStopping).ConfigureAwait(false));
-                        foreach (var rid in allIds.Where(id => !missing.Contains(id)).Take(20))
+                        foreach (var rid in allIds.Where(id => !missing.Contains(id) && !booked.Contains(id)).Take(20))
                         {
                             if (appStopping.IsCancellationRequested) break;
                             var raw = await store.GetStarRawAsync(rid, appStopping).ConfigureAwait(false);
                             if (raw?.ReadmeText is not { Length: > 0 }) continue;
                             var fullName = repoNames.TryGetValue(rid, out var fn) ? fn : $"repo:{rid}";
                             var st = await ingest.IngestRepoAsync(rid, fullName, null, null, raw.ReadmeText,
-                                repoNames, appStopping).ConfigureAwait(false);
+                                repoNames, Convert.ToUInt64(nextId), appStopping).ConfigureAwait(false);
                             if (st is null)
                             {
                                 _logger.LogWarning("NER graph ingest: transport failed for {RepoId} — stage skipped this run", rid);
                                 continue;
                             }
+                            // Book the ACTUAL span the batch used; next repo continues
+                            // contiguously. A failed booking self-heals: batch ids are
+                            // deterministic (stars-repo:N), so a re-run replays the sidecar
+                            // ledger and books again.
+                            await store.StarsGraphNodeBookedAsync(rid, nextId, st.Chunks, appStopping).ConfigureAwait(false);
+                            nextId += 1 + st.Chunks;
                             total = new Graph.StarsGraphIngestService.RunStats(
                                 total.Repos + st.Repos, total.Chunks + st.Chunks, total.Entities + st.Entities,
                                 total.Relations + st.Relations, total.MentionEdges + st.MentionEdges);
                             processed++;
                         }
                         _logger.LogInformation(
-                            "NER graph ingest: {Processed} repos, {Chunks} chunks, {Entities} entities, {Relations} relations, {Edges} mention edges",
-                            processed, total.Chunks, total.Entities, total.Relations, total.MentionEdges);
+                            "NER graph ingest: {Processed} repos, {Chunks} chunks, {Entities} entities, {Relations} relations, {Edges} mention edges (next node id {NextId})",
+                            processed, total.Chunks, total.Entities, total.Relations, total.MentionEdges, nextId);
                     }
                 }
                 catch (OperationCanceledException) when (appStopping.IsCancellationRequested) { throw; }

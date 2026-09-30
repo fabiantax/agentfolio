@@ -38,7 +38,7 @@ public sealed class StarsGraphIngestService(
     public async Task<RunStats?> IngestRepoAsync(
         long repoId, string fullName, string? description, string? language,
         string readmeText, IReadOnlyDictionary<long, string> repoNamesToIds,
-        CancellationToken ct = default)
+        ulong sidecarIdBase = 0, CancellationToken ct = default)
     {
         var chunks = MarkdownChunker.Chunk(repoId, readmeText);
         if (chunks.Count > maxChunksPerRun)
@@ -53,7 +53,7 @@ public sealed class StarsGraphIngestService(
                 Language = language,
                 Chunks = Array.Empty<Chunking.ReadmeChunk>(),
             };
-            return await ShipAsync(repoOnly, stats => new RunStats(1, 0, 0, 0, 0), ct).ConfigureAwait(false);
+            return await ShipAsync(repoOnly, sidecarIdBase, stats => new RunStats(1, 0, 0, 0, 0), ct).ConfigureAwait(false);
         }
 
         // NER over all chunks in ONE batched call (batching is the throughput lever).
@@ -91,14 +91,16 @@ public sealed class StarsGraphIngestService(
         var relationCount = rels.Sum(r => r?.Relations.Count ?? 0);
         var mainStats = await ShipAsync(
             batch,
+            sidecarIdBase,
             summary => new RunStats(1, chunks.Count, entityCount, relationCount, summary?.LocalEdges ?? 0),
             ct).ConfigureAwait(false);
         if (mainStats is null)
             return null;
 
         // Mentions: GitHub URLs in README text -> mentions_repo edges (known targets
-        // only), shipped as a second batch (first edge batch failed -> skip quietly,
-        // same degrade-soft semantics).
+        // only). Legacy a2a transport only: the sidecar CLI validates edge endpoints
+        // in-batch and raw repo ids are meaningless in the dense id space, so the
+        // sidecar path never ships them (until GF grows cross-batch edge support).
         var mentionEdges = 0;
         var mentions = new List<(long From, long To)>();
         foreach (var m in RepoUrl.Matches(readmeText).Cast<System.Text.RegularExpressions.Match>())
@@ -117,7 +119,7 @@ public sealed class StarsGraphIngestService(
                 }
             }
         }
-        if (mentions.Count > 0)
+        if (mentions.Count > 0 && transport is A2aIngestTransport)
         {
             var mentionBatch = new StarsIngestBatch
             {
@@ -130,6 +132,7 @@ public sealed class StarsGraphIngestService(
             };
             var mentionStats = await ShipAsync(
                 mentionBatch,
+                0, // legacy transport; id base unused
                 summary => new RunStats(0, 0, 0, 0, mentionEdges),
                 ct).ConfigureAwait(false);
             if (mentionStats is null)
@@ -142,13 +145,14 @@ public sealed class StarsGraphIngestService(
     /// <summary>
     /// Degrade-soft boundary: any transport failure (legacy HTTP throw, sidecar
     /// spawn/timeout/exit/parse failure, ok=false summary) logs and returns null —
-    /// never throws to the sync worker.
+    /// never throws to the sync worker. sidecarIdBase is the dense node-id span
+    /// allocated for this batch by the caller (no-op for the legacy transport).
     /// </summary>
-    private async Task<RunStats?> ShipAsync(StarsIngestBatch batch, Func<IngestSummary?, RunStats> project, CancellationToken ct)
+    private async Task<RunStats?> ShipAsync(StarsIngestBatch batch, ulong sidecarIdBase, Func<IngestSummary?, RunStats> project, CancellationToken ct)
     {
         try
         {
-            var summary = await transport.ShipAsync(batch, ct).ConfigureAwait(false);
+            var summary = await transport.ShipAsync(batch, sidecarIdBase, ct).ConfigureAwait(false);
             if (summary is { Ok: false })
             {
                 var detail = string.Join("; ", summary.Errors.Select(e => $"{e.Kind}: {e.Message}"));
