@@ -59,7 +59,7 @@ builder.Services.AddSingleton(sp =>
     var gliner = Environment.GetEnvironmentVariable("GLINER_URL") ?? "http://127.0.0.1:8095";
     var relex = Environment.GetEnvironmentVariable("RELEX_URL") ?? "http://127.0.0.1:8090";
     var gf = Environment.GetEnvironmentVariable("GF_A2A_URL") ?? "http://100.112.37.119:50052";
-    return new Slices.Stars.Extraction.GlinerBatchClient(gliner);
+    return new Slices.Stars.Extraction.GlinerBatchClient(gliner, timeoutSeconds: 300);
 });
 builder.Services.AddSingleton(sp =>
 {

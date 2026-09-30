@@ -243,6 +243,31 @@ public class StarsGraphIngestTests
     }
 
     [Fact]
+    public async Task Ner_extraction_failure_skips_repo_not_the_slice()
+    {
+        var transport = new RecordingTransport();
+        var flakyNer = new ThrowingNer();
+        var svc = new StarsGraphIngestService(transport, flakyNer);
+
+        // Degrade-soft boundary: extraction failure -> null (repo skipped this
+        // run, stays unbooked), never an exception to the sync worker.
+        var stats = await svc.IngestRepoAsync(7, "o/n", null, null, "# T\n\ntext", new System.Collections.Generic.Dictionary<long, string>());
+
+        Assert.Null(stats);
+        Assert.Empty(transport.Batches); // nothing shipped when NER died
+    }
+
+    /// <summary>NER that always fails (gliner cold-start / 503 shape).</summary>
+    private sealed class ThrowingNer : IEntityExtractor
+    {
+        public System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<ExtractionResult>> ExtractAsync(
+            System.Collections.Generic.IReadOnlyList<string> texts,
+            System.Collections.Generic.IReadOnlyList<string> entityLabels,
+            System.Threading.CancellationToken ct = default)
+            => throw new System.Net.Http.HttpRequestException("503 (Service Unavailable)");
+    }
+
+    [Fact]
     public async Task Sidecar_process_failure_degrades_soft_no_throw()
     {
         var transport = new RecordingTransport { ThrowOnShip = new IngestCliException("spawn failed: no such file") };

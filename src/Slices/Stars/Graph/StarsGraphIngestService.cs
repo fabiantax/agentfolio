@@ -57,9 +57,22 @@ public sealed class StarsGraphIngestService(
         }
 
         // NER over all chunks in ONE batched call (batching is the throughput lever).
+        // Per-repo guard: extraction failures (gliner socket idle-unload cold start,
+        // 503/timeout) must kill THIS repo, not the worker's whole 20-repo slice —
+        // the repo stays unbooked and retries next sync.
         var labels = new[] { "software", "organization", "person", "concept", "library", "language" };
         var texts = chunks.Select(c => c.Text).ToArray();
-        var ner = await entityExtractor.ExtractAsync(texts, labels, ct).ConfigureAwait(false);
+        IReadOnlyList<ExtractionResult> ner;
+        try
+        {
+            ner = await entityExtractor.ExtractAsync(texts, labels, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception nex)
+        {
+            Console.Error.WriteLine($"stars ingest: NER extraction failed for repo {repoId} — skipping repo this run ({nex.Message})");
+            return null;
+        }
 
         // Relations per chunk (prose default = Relex), best-effort.
         var rels = new ExtractionResult[chunks.Count];
