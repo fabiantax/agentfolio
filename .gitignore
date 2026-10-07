@@ -482,3 +482,7 @@ $RECYCLE.BIN/
 *.swp
 .atlas/
 .atlas/
+
+# skillopt run configs carry API keys + outputs copy them — never track
+.skillopt/
+outputs/

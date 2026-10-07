@@ -1,0 +1,12 @@
+# Baseline 2026-10-07 (user-approved): qwen API key was committed before this
+# cleanup; key rotation owned by the user, files untracked in the same commit
+# as this baseline. Old blobs stay in history by decision — no rewrite.
+# Fingerprints as computed by gitleaks 8.28 (path:rule:line, secrets never
+# written here).
+outputs/config.json:generic-api-key:6
+outputs/summary.json:generic-api-key:8
+outputs/skillopt__csharp_review_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ4-mtp_20260915_172041/config.json:generic-api-key:6
+.skillopt/csharp-review/config.yaml:generic-api-key:9
+.skillopt/csharp-review/config.yaml:generic-api-key:35
+# tests/AgentFolio.UnitTests/AgentsTests.cs = user-confirmed dummy fixture
+tests/AgentFolio.UnitTests/AgentsTests.cs:generic-api-key:13
