@@ -268,6 +268,7 @@ app.MapMethods("/", ["GET", "HEAD"], () => Results.Redirect("/share/showcase", p
 app.MapGet("/healthz", () => Results.Json(new { status = "ok" }));
 
 app.MapChatApi();
+app.MapChatCapabilitiesApi();
 app.MapStarsApi();
 
 // Static UI: /web/* serves the built chat component + host demos (same origin as API).

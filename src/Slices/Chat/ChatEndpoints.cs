@@ -211,6 +211,24 @@ public static class ChatEndpoints
     internal static IChatClient ResolveChatClient(IServiceProvider sp)
         => sp.GetRequiredKeyedService<IChatClient>(NimChatClientFactory.ClientName);
 
+    /// <summary>True when the keyed 'nim' client is resolvable (capability probe, never throws).</summary>
+    internal static bool NimConfigured(IServiceProvider sp)
+    {
+        try { ResolveChatClient(sp); return true; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    public static IEndpointRouteBuilder MapChatCapabilitiesApi(this IEndpointRouteBuilder app)
+    {
+        // Honest capability report (AGENTS.md rule 1: the UI must be able to OFFER
+        // the browser tier when NIM is absent instead of discovering a 503).
+        app.MapGet("/chat/capabilities", (IServiceProvider sp) =>
+            Results.Json(new ChatCapabilities(
+                Nim: NimConfigured(sp),
+                BrowserInference: true)));
+        return app;
+    }
+
     /// <summary>Regex for [DOC n] markers the model may cite (case-insensitive).</summary>
     private static readonly System.Text.RegularExpressions.Regex DocMarkerRegex =
         new(@"\[DOC\s+(\d+)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);

@@ -28,8 +28,14 @@ export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promis
   if (!pipePromise) {
     onStatus?.('loading');
     pipePromise = (async () => {
-      const mod = await import(/* @vite-ignore */ '@huggingface/transformers');
+      // Same-origin vendor chunk (browser-local-ml skill: never a CDN —
+      // content blockers kill cross-origin dynamic imports before any request
+      // leaves the device, and Safari reports only "Load failed").
+      const mod = await import(
+        /* @vite-ignore */ new URL('./transformers-vendor.js', import.meta.url).href
+      );
       mod.env.allowLocalModels = false;
+      mod.env.backends.onnx.wasm.wasmPaths = new URL('./dist/', import.meta.url).href;
       const pipe = await mod.pipeline(
         'text-generation',
         'onnx-community/LFM2-350M-ONNX',
@@ -52,7 +58,9 @@ export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promis
   return {
     async reply(message: string): Promise<string> {
       let final = '';
-      const hf = await import('@huggingface/transformers');
+      const hf = await import(
+        /* @vite-ignore */ new URL('./transformers-vendor.js', import.meta.url).href
+      );
       const streamer = new hf.TextStreamer(
         (pipe as unknown as { tokenizer: unknown }).tokenizer as never,
         { skip_prompt: true, skip_special_tokens: true, on_final_text: (t: string) => { final += t; } },

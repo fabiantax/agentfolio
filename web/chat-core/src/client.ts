@@ -6,11 +6,20 @@ export interface StreamCallbacks {
   onError: (err: Error) => void;
 }
 
+export interface ChatCapabilities {
+  /** Server-side NIM chat client is configured and resolvable. */
+  nim: boolean;
+  /** The widget ships a WebGPU browser tier (static capability). */
+  browserInference: boolean;
+}
+
 export interface ChatClient {
   /** Receiver-normalized fetch used for all transport (DI point for tests). */
   readonly fetchImpl: typeof fetch;
   /** POST /auth/login; resolves true when the session cookie is set. */
   login(password: string): Promise<boolean>;
+  /** GET /chat/capabilities; reports which inference surfaces the server offers. */
+  capabilities(): Promise<ChatCapabilities>;
   /** POST /chat and stream SSE tokens through the callbacks. */
   sendMessage(message: string, cb: StreamCallbacks): Promise<void>;
 }
@@ -47,6 +56,16 @@ export class AgentFolioClient implements ChatClient {
       throw new Error(`login failed: ${res.status}`);
     }
     return true;
+  }
+
+  async capabilities(): Promise<ChatCapabilities> {
+    const res = await this.fetchImpl(this.url('/chat/capabilities'), {
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      throw new Error(`capabilities failed: ${res.status}`);
+    }
+    return (await res.json()) as ChatCapabilities;
   }
 
   async sendMessage(message: string, cb: StreamCallbacks): Promise<void> {

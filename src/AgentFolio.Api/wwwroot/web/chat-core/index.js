@@ -1,4 +1,4 @@
-class h {
+class f {
   constructor() {
     this.buffer = "";
   }
@@ -10,8 +10,8 @@ class h {
     for (; (e = this.buffer.search(/\r?\n\r?\n/)) !== -1; ) {
       const s = this.buffer.slice(0, e);
       this.buffer = this.buffer.slice(e).replace(/^\r?\n\r?\n/, "");
-      const o = u(s);
-      o && r.push(o);
+      const i = h(s);
+      i && r.push(i);
     }
     return r;
   }
@@ -19,12 +19,12 @@ class h {
   flush() {
     if (!this.buffer.trim())
       return this.buffer = "", [];
-    const t = u(this.buffer);
+    const t = h(this.buffer);
     return this.buffer = "", t ? [t] : [];
   }
 }
-function u(a) {
-  const t = a.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
+function h(n) {
+  const t = n.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
   if (t.length === 0) return null;
   const r = t.join(`
 `);
@@ -35,11 +35,11 @@ function u(a) {
   } catch {
     return { kind: "unknown", raw: r };
   }
-  return b(e);
+  return m(e);
 }
-function b(a) {
-  if (typeof a == "object" && a !== null) {
-    const t = a;
+function m(n) {
+  if (typeof n == "object" && n !== null) {
+    const t = n;
     if (typeof t.text == "string" && t.conversationId === void 0)
       return { kind: "token", text: t.text };
     if (typeof t.conversationId == "string") {
@@ -56,9 +56,9 @@ function b(a) {
       };
     }
   }
-  return { kind: "unknown", raw: JSON.stringify(a) };
+  return { kind: "unknown", raw: JSON.stringify(n) };
 }
-class m {
+class g {
   constructor(t, r = fetch) {
     this.serverUrl = t, this.fetchImpl = r.bind(globalThis);
   }
@@ -76,6 +76,14 @@ class m {
       throw new Error(`login failed: ${r.status}`);
     return !0;
   }
+  async capabilities() {
+    const t = await this.fetchImpl(this.url("/chat/capabilities"), {
+      credentials: "include"
+    });
+    if (!t.ok)
+      throw new Error(`capabilities failed: ${t.status}`);
+    return await t.json();
+  }
   async sendMessage(t, r) {
     let e;
     try {
@@ -85,82 +93,85 @@ class m {
         credentials: "include",
         body: JSON.stringify({ message: t })
       });
-    } catch (i) {
-      r.onError(i instanceof Error ? i : new Error(String(i)));
+    } catch (o) {
+      r.onError(o instanceof Error ? o : new Error(String(o)));
       return;
     }
     if (!e.ok || !e.body) {
       r.onError(new Error(`chat request failed: ${e.status}`));
       return;
     }
-    const s = new h(), o = e.body.getReader(), n = new TextDecoder();
+    const s = new f(), i = e.body.getReader(), a = new TextDecoder();
     try {
       for (; ; ) {
-        const { done: i, value: l } = await o.read();
-        if (i) break;
-        for (const f of s.push(n.decode(l, { stream: !0 })))
-          c(f, r);
+        const { done: o, value: l } = await i.read();
+        if (o) break;
+        for (const d of s.push(a.decode(l, { stream: !0 })))
+          p(d, r);
       }
-      for (const i of s.push(n.decode()))
-        c(i, r);
-      for (const i of s.flush())
-        c(i, r);
-    } catch (i) {
-      r.onError(i instanceof Error ? i : new Error(String(i)));
+      for (const o of s.push(a.decode()))
+        p(o, r);
+      for (const o of s.flush())
+        p(o, r);
+    } catch (o) {
+      r.onError(o instanceof Error ? o : new Error(String(o)));
     }
   }
 }
-function c(a, t) {
-  a.kind === "token" ? t.onToken(a.text) : a.kind === "done" && t.onDone(a);
+function p(n, t) {
+  n.kind === "token" ? t.onToken(n.text) : n.kind === "done" && t.onDone(n);
 }
-function p(a = navigator) {
-  return typeof a?.gpu == "object" && a.gpu !== null;
+function b(n = navigator) {
+  return typeof n?.gpu == "object" && n.gpu !== null;
 }
-let d = null;
-async function g(a) {
-  if (!p()) throw new Error("WebGPU unavailable");
-  d || (a?.("loading"), d = (async () => {
+let c = null;
+async function v(n) {
+  if (!b()) throw new Error("WebGPU unavailable");
+  c || (n?.("loading"), c = (async () => {
     const r = await import(
       /* @vite-ignore */
-      "@huggingface/transformers"
+      new URL("data:video/mp2t;base64,LyoqCiAqIFNhbWUtb3JpZ2luIHZlbmRvciByZS1leHBvcnQgb2YgQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyAoYnJvd3Nlci1sb2NhbC1tbAogKiBza2lsbDogQ0ROIGR5bmFtaWMgaW1wb3J0cyBkaWUgc2lsZW50bHkgb24gaU9TIFNhZmFyaSBiZWhpbmQgY29udGVudAogKiBibG9ja2VycyDigJQgZXZlcnl0aGluZyBtdXN0IGJlIHNlcnZlZCBmcm9tIHRoZSB3aWRnZXQncyBvd24gb3JpZ2luKS4KICogQnVpbHQgYXMgYSBzZXBhcmF0ZSAndHJhbnNmb3JtZXJzLXZlbmRvcicgY2h1bmsgKH4xIE1CLCBsb2FkZWQgb25seSB3aGVuCiAqIHRoZSB1c2VyIGV4cGxpY2l0bHkgcGlja3MgdGhlIGJyb3dzZXIgbW9kZWwpLgogKi8KZXhwb3J0ICogZnJvbSAnQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyc7Cg==", import.meta.url).href
     );
-    return r.env.allowLocalModels = !1, await r.pipeline(
+    return r.env.allowLocalModels = !1, r.env.backends.onnx.wasm.wasmPaths = new URL("./dist/", import.meta.url).href, await r.pipeline(
       "text-generation",
       "onnx-community/LFM2-350M-ONNX",
       { dtype: "q4", device: "webgpu" }
     );
   })().catch((r) => {
-    throw d = null, r;
+    throw c = null, r;
   }));
   try {
-    await d;
+    await c;
   } catch (r) {
-    throw a?.("error"), r instanceof Error ? r : new Error(String(r));
+    throw n?.("error"), r instanceof Error ? r : new Error(String(r));
   }
-  a?.("ready");
-  const t = await d;
+  n?.("ready");
+  const t = await c;
   return {
     async reply(r) {
       let e = "";
-      const s = await import("@huggingface/transformers"), o = new s.TextStreamer(
+      const s = await import(
+        /* @vite-ignore */
+        new URL("data:video/mp2t;base64,LyoqCiAqIFNhbWUtb3JpZ2luIHZlbmRvciByZS1leHBvcnQgb2YgQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyAoYnJvd3Nlci1sb2NhbC1tbAogKiBza2lsbDogQ0ROIGR5bmFtaWMgaW1wb3J0cyBkaWUgc2lsZW50bHkgb24gaU9TIFNhZmFyaSBiZWhpbmQgY29udGVudAogKiBibG9ja2VycyDigJQgZXZlcnl0aGluZyBtdXN0IGJlIHNlcnZlZCBmcm9tIHRoZSB3aWRnZXQncyBvd24gb3JpZ2luKS4KICogQnVpbHQgYXMgYSBzZXBhcmF0ZSAndHJhbnNmb3JtZXJzLXZlbmRvcicgY2h1bmsgKH4xIE1CLCBsb2FkZWQgb25seSB3aGVuCiAqIHRoZSB1c2VyIGV4cGxpY2l0bHkgcGlja3MgdGhlIGJyb3dzZXIgbW9kZWwpLgogKi8KZXhwb3J0ICogZnJvbSAnQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyc7Cg==", import.meta.url).href
+      ), i = new s.TextStreamer(
         t.tokenizer,
-        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (n) => {
-          e += n;
+        { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (a) => {
+          e += a;
         } }
       );
       return await t(
         [{ role: "user", content: r }],
-        { max_new_tokens: 256, do_sample: !1, streamer: o }
+        { max_new_tokens: 256, do_sample: !1, streamer: i }
       ), e;
     },
     dispose() {
-      d = null;
+      c = null;
     }
   };
 }
 class x extends HTMLElement {
   constructor() {
-    super(...arguments), this.serverUrl = "", this.password = "", this.forceServer = !1, this.client = null, this.loggedIn = !1, this.local = null, this.localStatus = "unavailable", this.busy = !1, this.transcript = null, this.tierBadge = null, this.statusEl = null, this.input = null, this.lastUrl = "", this.lastClient = null;
+    super(...arguments), this.serverUrl = "", this.password = "", this.forceServer = !1, this.forceBrowser = !1, this.nimUnavailable = !1, this.capabilitiesProbe = null, this.client = null, this.loggedIn = !1, this.local = null, this.localStatus = "unavailable", this.busy = !1, this.transcript = null, this.tierBadge = null, this.tierSelect = null, this.statusEl = null, this.input = null, this.lastUrl = "", this.lastClient = null;
   }
   static get observedAttributes() {
     return ["server-url"];
@@ -168,13 +179,36 @@ class x extends HTMLElement {
   connectedCallback() {
     this.attachShadow({ mode: "open" }), this.render();
     const t = this.getAttribute("server-url");
-    t && !this.serverUrl && (this.serverUrl = t);
+    t && !this.serverUrl && (this.serverUrl = t), this.forceServer = this.hasAttribute("force-server"), this.forceBrowser = this.hasAttribute("force-browser"), this.probeCapabilities();
+  }
+  probeCapabilities() {
+    this.capabilitiesProbe || (this.capabilitiesProbe = this.ensureClient().capabilities().then((t) => {
+      this.nimUnavailable = !t.nim, this.updateTierPicker();
+    }).catch(() => {
+    }));
+  }
+  /** True when the browser tier CAN run here (WebGPU present). */
+  browserCapable() {
+    return !this.forceServer && b();
+  }
+  /** True when the user's current picker selection routes a turn to the browser. */
+  browserSelected() {
+    if (this.forceServer) return !1;
+    if (this.forceBrowser) return !0;
+    const t = this.tierSelect?.value;
+    return t === "browser" ? !0 : t === "server" ? !1 : this.nimUnavailable && this.browserCapable();
+  }
+  updateTierPicker() {
+    if (this.tierSelect && this.nimUnavailable) {
+      const t = this.tierSelect.querySelector('option[value="auto"]');
+      t && (t.textContent = "auto (server offline — browser model)");
+    }
   }
   attributeChangedCallback(t, r, e) {
     t === "server-url" && (this.serverUrl = e ?? "");
   }
   ensureClient() {
-    return (!this.lastClient || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.lastClient = new m(this.serverUrl), this.loggedIn = !1), this.lastClient;
+    return (!this.lastClient || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.lastClient = new g(this.serverUrl), this.loggedIn = !1), this.lastClient;
   }
   setStatus(t) {
     this.statusEl && (this.statusEl.textContent = t), this.dispatchEvent(new CustomEvent("af-status", { detail: { status: t }, bubbles: !0, composed: !0 }));
@@ -199,11 +233,11 @@ class x extends HTMLElement {
       !this.loggedIn && this.password && (await e.login(this.password), this.loggedIn = !0);
       const s = await e.fetchImpl(new URL("/api/uploads?sync=1", this.serverUrl || window.location.origin), { method: "POST", body: r, credentials: "include" });
       if (!s.ok) {
-        const n = await s.text();
-        throw new Error(`upload ${s.status}: ${n.slice(0, 120)}`);
+        const a = await s.text();
+        throw new Error(`upload ${s.status}: ${a.slice(0, 120)}`);
       }
-      const o = await s.json();
-      this.setStatus(o.extracted === !1 ? "doc: extraction failed" : "doc ready"), o.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${o.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
+      const i = await s.json();
+      this.setStatus(i.extracted === !1 ? "doc: extraction failed" : "doc ready"), i.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${i.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
     } catch (e) {
       this.renderError(e instanceof Error ? e.message : String(e));
     }
@@ -216,9 +250,9 @@ class x extends HTMLElement {
     const e = () => {
       this.busy = !1, this.setStatus("idle");
     };
-    if (!this.forceServer && p())
+    if (this.browserSelected())
       try {
-        this.local || (this.setStatus("browser-loading"), this.local = await g((o) => this.localStatus = o));
+        this.local || (this.setStatus("browser-loading"), this.local = await v((i) => this.localStatus = i));
         const s = await this.local.reply(r);
         this.setTier("Browser"), this.appendBubble(s, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
           detail: { conversationId: null, tier: "Browser", citations: [] },
@@ -226,22 +260,27 @@ class x extends HTMLElement {
           composed: !0
         })), e();
         return;
-      } catch {
+      } catch (s) {
         this.local = null;
+        const i = s instanceof Error ? s.message : String(s);
+        this.renderError(`browser model failed: ${i} — switch the model picker to "server" or reload to retry`), e();
+        return;
       }
     try {
       const s = this.ensureClient();
       !this.loggedIn && this.password && (await s.login(this.password), this.loggedIn = !0);
-      const o = this.appendBubble("", "assistant");
+      const i = this.appendBubble("", "assistant");
       this.setStatus("streaming"), await s.sendMessage(r, {
-        onToken: (n) => {
-          o.textContent += n, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: n }, bubbles: !0, composed: !0 }));
+        onToken: (a) => {
+          i.textContent += a, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: a }, bubbles: !0, composed: !0 }));
         },
-        onDone: (n) => {
-          this.setTier(n.tier), this.renderCitations(n.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: n, bubbles: !0, composed: !0 }));
+        onDone: (a) => {
+          this.setTier(a.tier), this.renderCitations(a.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: a, bubbles: !0, composed: !0 }));
         },
-        onError: (n) => {
-          this.renderError(`Error: ${n.message}`);
+        onError: (a) => {
+          a.message.includes("503") || a.message.includes("nim_not_configured") ? this.renderError(
+            this.browserCapable() ? 'Error: server chat is not configured (no NIM backend). Use the model picker above — "browser" runs a small LLM locally.' : "Error: server chat is not configured (no NIM backend) and this browser cannot run the local model (WebGPU missing)."
+          ) : this.renderError(`Error: ${a.message}`);
         }
       });
     } catch (s) {
@@ -281,6 +320,11 @@ class x extends HTMLElement {
       .tier[data-tier="Browser"] { background: #0E2A13; color: var(--af-success); border-color: #1B4724; }
       .tier[data-tier="Server"] { background: #12233F; color: var(--af-accent); border-color: #1F3A63; }
       .status { margin-left: auto; font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2); }
+      .tier-select { font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2);
+              background: var(--af-bg); border: 1px solid var(--af-border); border-radius: 6px;
+              padding: 3px 6px; cursor: pointer; outline: none; }
+      .tier-select:focus { border-color: var(--af-accent); }
+      .tier-select option { background: var(--af-bg); color: var(--af-text); }
       .log { height: 340px; overflow-y: auto; padding: 18px; display: flex;
              flex-direction: column; gap: 12px; background: var(--af-surface); }
       .log:empty::after { content: 'Ask anything - answers cite their sources.';
@@ -316,18 +360,27 @@ class x extends HTMLElement {
     const r = document.createElement("div");
     r.className = "head";
     const e = document.createElement("strong");
-    e.textContent = "Portfolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", r.append(e, this.tierBadge, this.statusEl), this.transcript = document.createElement("div"), this.transcript.className = "log";
+    e.textContent = "Portfolio Chat", this.tierBadge = document.createElement("span"), this.tierBadge.className = "tier", this.statusEl = document.createElement("span"), this.statusEl.className = "status", this.tierSelect = document.createElement("select"), this.tierSelect.className = "tier-select", this.tierSelect.setAttribute("aria-label", "Chat model");
+    for (const [l, d] of [
+      ["auto", "auto (server model)"],
+      ["browser", "browser (local LLM)"],
+      ["server", "server"]
+    ]) {
+      const u = document.createElement("option");
+      u.value = l, u.textContent = d, this.tierSelect.appendChild(u);
+    }
+    r.append(e, this.tierBadge, this.statusEl, this.tierSelect), this.transcript = document.createElement("div"), this.transcript.className = "log";
     const s = document.createElement("form");
     this.input = document.createElement("input"), this.input.type = "text", this.input.placeholder = "Ask about this portfolio…", this.input.setAttribute("aria-label", "Message");
-    const o = document.createElement("button");
-    o.type = "button", o.textContent = "📎", o.title = "Upload a document (pdf/txt/md/docx) for grounded answers", o.setAttribute("aria-label", "Upload document");
-    const n = document.createElement("input");
-    n.type = "file", n.accept = ".pdf,.txt,.md,.docx", n.hidden = !0, o.addEventListener("click", () => n.click()), n.addEventListener("change", () => {
-      const l = n.files?.[0];
-      l && this.upload(l), n.value = "";
-    });
     const i = document.createElement("button");
-    i.type = "submit", i.textContent = "Send", s.append(this.input, o, n, i), s.addEventListener("submit", (l) => {
+    i.type = "button", i.textContent = "📎", i.title = "Upload a document (pdf/txt/md/docx) for grounded answers", i.setAttribute("aria-label", "Upload document");
+    const a = document.createElement("input");
+    a.type = "file", a.accept = ".pdf,.txt,.md,.docx", a.hidden = !0, i.addEventListener("click", () => a.click()), a.addEventListener("change", () => {
+      const l = a.files?.[0];
+      l && this.upload(l), a.value = "";
+    });
+    const o = document.createElement("button");
+    o.type = "submit", o.textContent = "Send", s.append(this.input, i, a, o), s.addEventListener("submit", (l) => {
       l.preventDefault(), this.send();
     }), this.shadowRoot.append(r, this.transcript, s);
   }
@@ -335,11 +388,11 @@ class x extends HTMLElement {
 customElements.get("agentfolio-chat") || customElements.define("agentfolio-chat", x);
 export {
   x as AgentFolioChatElement,
-  m as AgentFolioClient,
-  h as SseParser,
-  p as hasWebGPU,
-  g as loadLocalChat,
-  u as parseFrame,
-  b as parsePayload
+  g as AgentFolioClient,
+  f as SseParser,
+  b as hasWebGPU,
+  v as loadLocalChat,
+  h as parseFrame,
+  m as parsePayload
 };
 //# sourceMappingURL=index.js.map

@@ -17,8 +17,13 @@ export declare class AgentFolioChatElement extends HTMLElement {
     serverUrl: string;
     /** Password used for the cookie login. */
     password: string;
-    /** Force the server tier even when WebGPU is available. */
+    /** Force the server tier (attribute: force-server). */
     forceServer: boolean;
+    /** Force the browser tier (attribute: force-browser) — explicit user choice, never a silent default. */
+    forceBrowser: boolean;
+    /** True once the server reports NIM unconfigured (drives the picker default + 503 copy). */
+    private nimUnavailable;
+    private capabilitiesProbe;
     private client;
     private loggedIn;
     private local;
@@ -26,9 +31,16 @@ export declare class AgentFolioChatElement extends HTMLElement {
     private busy;
     private transcript;
     private tierBadge;
+    private tierSelect;
     private statusEl;
     private input;
     connectedCallback(): void;
+    private probeCapabilities;
+    /** True when the browser tier CAN run here (WebGPU present). */
+    private browserCapable;
+    /** True when the user's current picker selection routes a turn to the browser. */
+    private browserSelected;
+    private updateTierPicker;
     attributeChangedCallback(name: string, _old: string | null, value: string | null): void;
     private ensureClient;
     private lastUrl;

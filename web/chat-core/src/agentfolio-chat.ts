@@ -23,8 +23,13 @@ export class AgentFolioChatElement extends HTMLElement {
   serverUrl = '';
   /** Password used for the cookie login. */
   password = '';
-  /** Force the server tier even when WebGPU is available. */
+  /** Force the server tier (attribute: force-server). */
   forceServer = false;
+  /** Force the browser tier (attribute: force-browser) — explicit user choice, never a silent default. */
+  forceBrowser = false;
+  /** True once the server reports NIM unconfigured (drives the picker default + 503 copy). */
+  private nimUnavailable = false;
+  private capabilitiesProbe: Promise<void> | null = null;
 
   private client: ChatClient | null = null;
   private loggedIn = false;
@@ -33,6 +38,7 @@ export class AgentFolioChatElement extends HTMLElement {
   private busy = false;
   private transcript: HTMLElement | null = null;
   private tierBadge: HTMLElement | null = null;
+  private tierSelect: HTMLSelectElement | null = null;
   private statusEl: HTMLElement | null = null;
   private input: HTMLInputElement | null = null;
 
@@ -42,6 +48,50 @@ export class AgentFolioChatElement extends HTMLElement {
     // Wire properties from attributes if set before upgrade.
     const url = this.getAttribute('server-url');
     if (url && !this.serverUrl) this.serverUrl = url;
+    this.forceServer = this.hasAttribute('force-server');
+    this.forceBrowser = this.hasAttribute('force-browser');
+    // Probe server capabilities once: when NIM is unset and this browser can run
+    // the WebGPU tier, default the picker to browser (still user-visible/switchable
+    // — an explicit OFFER, not a silent substitution; AGENTS.md rule 1).
+    this.probeCapabilities();
+  }
+
+  private probeCapabilities(): void {
+    if (this.capabilitiesProbe) return;
+    this.capabilitiesProbe = this.ensureClient()
+      .capabilities()
+      .then((caps) => {
+        this.nimUnavailable = !caps.nim;
+        this.updateTierPicker();
+      })
+      .catch(() => {
+        // Probe failure is non-fatal: leave picker defaults, server errors
+        // surface per-message as before.
+      });
+  }
+
+  /** True when the browser tier CAN run here (WebGPU present). */
+  private browserCapable(): boolean {
+    return !this.forceServer && hasWebGPU();
+  }
+
+  /** True when the user's current picker selection routes a turn to the browser. */
+  private browserSelected(): boolean {
+    if (this.forceServer) return false;
+    if (this.forceBrowser) return true;
+    const sel = this.tierSelect?.value;
+    if (sel === 'browser') return true;
+    if (sel === 'server') return false;
+    // Auto: browser only when the server explicitly lacks NIM.
+    return this.nimUnavailable && this.browserCapable();
+  }
+
+  private updateTierPicker(): void {
+    if (!this.tierSelect) return;
+    if (this.nimUnavailable) {
+      const auto = this.tierSelect.querySelector('option[value="auto"]');
+      if (auto) auto.textContent = 'auto (server offline — browser model)';
+    }
   }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null): void {
@@ -132,8 +182,10 @@ export class AgentFolioChatElement extends HTMLElement {
       this.setStatus('idle');
     };
 
-    // Browser tier: WebGPU + successfully loaded local pipeline.
-    if (!this.forceServer && hasWebGPU()) {
+    // Browser tier ONLY when explicitly selected (picker or force-browser attr).
+    // NO silent browser-first fallback (AGENTS.md rule 1): the tier is the user's
+    // choice, shown in the badge; failures are reported, never swallowed.
+    if (this.browserSelected()) {
       try {
         if (!this.local) {
           this.setStatus('browser-loading');
@@ -148,9 +200,15 @@ export class AgentFolioChatElement extends HTMLElement {
         }));
         finish();
         return;
-      } catch {
-        // Graceful fallback to the server tier.
+      } catch (err) {
+        // Load/run failure is REAL: surface it and stop. The user explicitly
+        // chose the browser tier — quietly switching to the server would hide
+        // the breakage (rule 1). Switching tiers is a visible user action.
         this.local = null;
+        const msg = err instanceof Error ? err.message : String(err);
+        this.renderError(`browser model failed: ${msg} — switch the model picker to "server" or reload to retry`);
+        finish();
+        return;
       }
     }
 
@@ -177,7 +235,15 @@ export class AgentFolioChatElement extends HTMLElement {
           this.dispatchEvent(new CustomEvent('af-done', { detail: d, bubbles: true, composed: true }));
         },
         onError: (err) => {
-          this.renderError(`Error: ${err.message}`);
+          if (err.message.includes('503') || err.message.includes('nim_not_configured')) {
+            this.renderError(
+              this.browserCapable()
+                ? 'Error: server chat is not configured (no NIM backend). Use the model picker above — "browser" runs a small LLM locally.'
+                : 'Error: server chat is not configured (no NIM backend) and this browser cannot run the local model (WebGPU missing).'
+            );
+          } else {
+            this.renderError(`Error: ${err.message}`);
+          }
         },
       });
     } catch (err) {
@@ -225,6 +291,11 @@ export class AgentFolioChatElement extends HTMLElement {
       .tier[data-tier="Browser"] { background: #0E2A13; color: var(--af-success); border-color: #1B4724; }
       .tier[data-tier="Server"] { background: #12233F; color: var(--af-accent); border-color: #1F3A63; }
       .status { margin-left: auto; font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2); }
+      .tier-select { font: 500 0.6875rem/1.4 var(--af-mono); color: var(--af-text-2);
+              background: var(--af-bg); border: 1px solid var(--af-border); border-radius: 6px;
+              padding: 3px 6px; cursor: pointer; outline: none; }
+      .tier-select:focus { border-color: var(--af-accent); }
+      .tier-select option { background: var(--af-bg); color: var(--af-text); }
       .log { height: 340px; overflow-y: auto; padding: 18px; display: flex;
              flex-direction: column; gap: 12px; background: var(--af-surface); }
       .log:empty::after { content: 'Ask anything - answers cite their sources.';
@@ -267,7 +338,24 @@ export class AgentFolioChatElement extends HTMLElement {
       this.tierBadge.className = 'tier';
       this.statusEl = document.createElement('span');
       this.statusEl.className = 'status';
-      head.append(title, this.tierBadge, this.statusEl);
+
+      // Model picker: explicit tier choice (AGENTS.md rule 1 — an offer, not a
+      // substitution). auto = server when configured, browser when it is not.
+      this.tierSelect = document.createElement('select');
+      this.tierSelect.className = 'tier-select';
+      this.tierSelect.setAttribute('aria-label', 'Chat model');
+      for (const [v, label] of [
+        ['auto', 'auto (server model)'],
+        ['browser', 'browser (local LLM)'],
+        ['server', 'server'],
+      ] as const) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = label;
+        this.tierSelect.appendChild(opt);
+      }
+
+      head.append(title, this.tierBadge, this.statusEl, this.tierSelect);
 
       this.transcript = document.createElement('div');
       this.transcript.className = 'log';

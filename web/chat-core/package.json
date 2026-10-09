@@ -6,11 +6,16 @@
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.json --emitDeclarationOnly",
+    "build": "vite build && tsc -p tsconfig.json --emitDeclarationOnly && cp node_modules/@huggingface/transformers/dist/ort-wasm-simd-threaded.jsep.{wasm,mjs} dist/",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -18,5 +23,8 @@
     "vite": "^6.0.0",
     "vitest": "^3.0.0"
   },
-  "customElements": "dist/custom-elements.json"
+  "customElements": "dist/custom-elements.json",
+  "dependencies": {
+    "@huggingface/transformers": "^3"
+  }
 }

@@ -58,6 +58,38 @@ public class ChatTests : IDisposable
     }
 
     [Fact]
+    public async Task GetCapabilities_WithNimOverride_ReportsNimTrue()
+    {
+        await using var factory = FactoryWithFakeNim();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/chat/capabilities");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var caps = await response.Content.ReadFromJsonAsync<ChatCapabilities>();
+        Assert.NotNull(caps);
+        Assert.True(caps!.Nim);
+        Assert.True(caps.BrowserInference);
+    }
+
+    [Fact]
+    public async Task GetCapabilities_WithoutNim_ReportsNimFalse()
+    {
+        // No keyed 'nim' override: the factory registration throws on env-missing
+        // resolve — capabilities must report false, not 500.
+        await using var factory = new WebApplicationFactory<Program>();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/chat/capabilities");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var caps = await response.Content.ReadFromJsonAsync<ChatCapabilities>();
+        Assert.NotNull(caps);
+        Assert.False(caps!.Nim);
+        Assert.True(caps.BrowserInference);
+    }
+
+    [Fact]
     public async Task PostChat_WithoutCookie_Returns401()
     {
         await using var factory = new WebApplicationFactory<Program>();
