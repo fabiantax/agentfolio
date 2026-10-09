@@ -18,6 +18,7 @@ using Slices.Share;
 using Slices.Stars;
 using AgentFolio.Platform.Migrations;
 using Microsoft.AspNetCore.HttpLogging;
+using AgentFolio.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 // Fail-fast DI: validate the whole graph at build (dev/test). Bad registrations
@@ -30,6 +31,10 @@ if (!builder.Environment.IsProduction())
         o.ValidateScopes = true;
     });
 }
+
+// Production container contract (#100): all required env present or the process
+// dies HERE with a named list — never a lazy first-request failure (#100 AC).
+ProductionStartupValidator.Validate(builder.Environment.IsProduction());
 
 // s5-05 one-shot migration: --migrate-single-to-tenant (checked BEFORE builder.Build).
 if (args.Contains("--migrate-single-to-tenant"))
@@ -255,6 +260,12 @@ app.MapGet("/weatherforecast", () =>
 
 // Landing: the app IS the showcase portfolio chat.
 app.MapMethods("/", ["GET", "HEAD"], () => Results.Redirect("/share/showcase", permanent: false));
+
+// Container health probe (#100): liveness only — answers 200 as soon as the host
+// is up. Dependency health is deliberate NOT here (retrieval backends degrade-open
+// by contract; a ColBERT blip must not restart the container). Docker/compose
+// healthchecks hit this endpoint; deep checks live in the D15 ladder (#81).
+app.MapGet("/healthz", () => Results.Json(new { status = "ok" }));
 
 app.MapChatApi();
 app.MapStarsApi();

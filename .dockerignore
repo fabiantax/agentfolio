@@ -1,0 +1,21 @@
+# Build context hygiene (#100): keep the image build to what it needs.
+.git
+.github
+.agents
+.claude
+.herme*
+.loopit
+.scratch
+.specify
+**/bin
+**/obj
+tests
+web
+extension
+docs
+deploy
+specs
+*.md
+!README.md
+.dockerignore
+Dockerfile
