@@ -38,8 +38,12 @@ export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promis
       mod.env.backends.onnx.wasm.wasmPaths = new URL('./dist/', import.meta.url).href;
       const pipe = await mod.pipeline(
         'text-generation',
-        'onnx-community/LFM2-350M-ONNX',
-        { dtype: 'q4', device: 'webgpu' },
+        // LFM2.5-350M: newest-gen Liquid chat model; q4f16 = 255 MB download
+        // (HF-verified 2026-10-09; smallest viable browser chat class — see
+        // browser-local-ml skill: param count ≠ download size, gemma-270m is
+        // heavier than this).
+        'onnx-community/LFM2.5-350M-ONNX',
+        { dtype: 'q4f16', device: 'webgpu' },
       ) as unknown as Pipeline;
       return pipe;
     })().catch((err) => {

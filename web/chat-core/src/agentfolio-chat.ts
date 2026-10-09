@@ -346,7 +346,7 @@ export class AgentFolioChatElement extends HTMLElement {
       this.tierSelect.setAttribute('aria-label', 'Chat model');
       for (const [v, label] of [
         ['auto', 'auto (server model)'],
-        ['browser', 'browser (local LLM)'],
+        ['browser', 'browser (LFM2.5 local)'],
         ['server', 'server'],
       ] as const) {
         const opt = document.createElement('option');
