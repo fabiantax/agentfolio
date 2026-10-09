@@ -1,4 +1,4 @@
-class f {
+class m {
   constructor() {
     this.buffer = "";
   }
@@ -10,8 +10,8 @@ class f {
     for (; (e = this.buffer.search(/\r?\n\r?\n/)) !== -1; ) {
       const s = this.buffer.slice(0, e);
       this.buffer = this.buffer.slice(e).replace(/^\r?\n\r?\n/, "");
-      const i = h(s);
-      i && r.push(i);
+      const n = h(s);
+      n && r.push(n);
     }
     return r;
   }
@@ -23,8 +23,8 @@ class f {
     return this.buffer = "", t ? [t] : [];
   }
 }
-function h(n) {
-  const t = n.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
+function h(i) {
+  const t = i.split(/\r?\n/).filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, ""));
   if (t.length === 0) return null;
   const r = t.join(`
 `);
@@ -35,11 +35,11 @@ function h(n) {
   } catch {
     return { kind: "unknown", raw: r };
   }
-  return m(e);
+  return g(e);
 }
-function m(n) {
-  if (typeof n == "object" && n !== null) {
-    const t = n;
+function g(i) {
+  if (typeof i == "object" && i !== null) {
+    const t = i;
     if (typeof t.text == "string" && t.conversationId === void 0)
       return { kind: "token", text: t.text };
     if (typeof t.conversationId == "string") {
@@ -56,9 +56,9 @@ function m(n) {
       };
     }
   }
-  return { kind: "unknown", raw: JSON.stringify(n) };
+  return { kind: "unknown", raw: JSON.stringify(i) };
 }
-class g {
+class v {
   constructor(t, r = fetch) {
     this.serverUrl = t, this.fetchImpl = r.bind(globalThis);
   }
@@ -101,10 +101,10 @@ class g {
       r.onError(new Error(`chat request failed: ${e.status}`));
       return;
     }
-    const s = new f(), i = e.body.getReader(), a = new TextDecoder();
+    const s = new m(), n = e.body.getReader(), a = new TextDecoder();
     try {
       for (; ; ) {
-        const { done: o, value: l } = await i.read();
+        const { done: o, value: l } = await n.read();
         if (o) break;
         for (const d of s.push(a.decode(l, { stream: !0 })))
           p(d, r);
@@ -118,20 +118,21 @@ class g {
     }
   }
 }
-function p(n, t) {
-  n.kind === "token" ? t.onToken(n.text) : n.kind === "done" && t.onDone(n);
+function p(i, t) {
+  i.kind === "token" ? t.onToken(i.text) : i.kind === "done" && t.onDone(i);
 }
-function b(n = navigator) {
-  return typeof n?.gpu == "object" && n.gpu !== null;
+function b(i = navigator) {
+  return typeof i?.gpu == "object" && i.gpu !== null;
 }
 let c = null;
-async function v(n) {
+function f() {
+  const i = import.meta.url;
+  return i.slice(0, i.lastIndexOf("/") + 1) + "transformers-vendor.js";
+}
+async function x(i) {
   if (!b()) throw new Error("WebGPU unavailable");
-  c || (n?.("loading"), c = (async () => {
-    const r = await import(
-      /* @vite-ignore */
-      new URL("data:video/mp2t;base64,LyoqCiAqIFNhbWUtb3JpZ2luIHZlbmRvciByZS1leHBvcnQgb2YgQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyAoYnJvd3Nlci1sb2NhbC1tbAogKiBza2lsbDogQ0ROIGR5bmFtaWMgaW1wb3J0cyBkaWUgc2lsZW50bHkgb24gaU9TIFNhZmFyaSBiZWhpbmQgY29udGVudAogKiBibG9ja2VycyDigJQgZXZlcnl0aGluZyBtdXN0IGJlIHNlcnZlZCBmcm9tIHRoZSB3aWRnZXQncyBvd24gb3JpZ2luKS4KICogQnVpbHQgYXMgYSBzZXBhcmF0ZSAndHJhbnNmb3JtZXJzLXZlbmRvcicgY2h1bmsgKH4xIE1CLCBsb2FkZWQgb25seSB3aGVuCiAqIHRoZSB1c2VyIGV4cGxpY2l0bHkgcGlja3MgdGhlIGJyb3dzZXIgbW9kZWwpLgogKi8KZXhwb3J0ICogZnJvbSAnQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyc7Cg==", import.meta.url).href
-    );
+  c || (i?.("loading"), c = (async () => {
+    const r = await import(f());
     return r.env.allowLocalModels = !1, r.env.backends.onnx.wasm.wasmPaths = new URL("./dist/", import.meta.url).href, await r.pipeline(
       "text-generation",
       // LFM2.5-350M: newest-gen Liquid chat model; q4f16 = 255 MB download
@@ -147,17 +148,14 @@ async function v(n) {
   try {
     await c;
   } catch (r) {
-    throw n?.("error"), r instanceof Error ? r : new Error(String(r));
+    throw i?.("error"), r instanceof Error ? r : new Error(String(r));
   }
-  n?.("ready");
+  i?.("ready");
   const t = await c;
   return {
     async reply(r) {
       let e = "";
-      const s = await import(
-        /* @vite-ignore */
-        new URL("data:video/mp2t;base64,LyoqCiAqIFNhbWUtb3JpZ2luIHZlbmRvciByZS1leHBvcnQgb2YgQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyAoYnJvd3Nlci1sb2NhbC1tbAogKiBza2lsbDogQ0ROIGR5bmFtaWMgaW1wb3J0cyBkaWUgc2lsZW50bHkgb24gaU9TIFNhZmFyaSBiZWhpbmQgY29udGVudAogKiBibG9ja2VycyDigJQgZXZlcnl0aGluZyBtdXN0IGJlIHNlcnZlZCBmcm9tIHRoZSB3aWRnZXQncyBvd24gb3JpZ2luKS4KICogQnVpbHQgYXMgYSBzZXBhcmF0ZSAndHJhbnNmb3JtZXJzLXZlbmRvcicgY2h1bmsgKH4xIE1CLCBsb2FkZWQgb25seSB3aGVuCiAqIHRoZSB1c2VyIGV4cGxpY2l0bHkgcGlja3MgdGhlIGJyb3dzZXIgbW9kZWwpLgogKi8KZXhwb3J0ICogZnJvbSAnQGh1Z2dpbmdmYWNlL3RyYW5zZm9ybWVycyc7Cg==", import.meta.url).href
-      ), i = new s.TextStreamer(
+      const s = await import(f()), n = new s.TextStreamer(
         t.tokenizer,
         { skip_prompt: !0, skip_special_tokens: !0, on_final_text: (a) => {
           e += a;
@@ -165,7 +163,7 @@ async function v(n) {
       );
       return await t(
         [{ role: "user", content: r }],
-        { max_new_tokens: 256, do_sample: !1, streamer: i }
+        { max_new_tokens: 256, do_sample: !1, streamer: n }
       ), e;
     },
     dispose() {
@@ -173,7 +171,7 @@ async function v(n) {
     }
   };
 }
-class x extends HTMLElement {
+class w extends HTMLElement {
   constructor() {
     super(...arguments), this.serverUrl = "", this.password = "", this.forceServer = !1, this.forceBrowser = !1, this.nimUnavailable = !1, this.capabilitiesProbe = null, this.client = null, this.loggedIn = !1, this.local = null, this.localStatus = "unavailable", this.busy = !1, this.transcript = null, this.tierBadge = null, this.tierSelect = null, this.statusEl = null, this.input = null, this.lastUrl = "", this.lastClient = null;
   }
@@ -212,7 +210,7 @@ class x extends HTMLElement {
     t === "server-url" && (this.serverUrl = e ?? "");
   }
   ensureClient() {
-    return (!this.lastClient || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.lastClient = new g(this.serverUrl), this.loggedIn = !1), this.lastClient;
+    return (!this.lastClient || this.lastUrl !== this.serverUrl) && (this.lastUrl = this.serverUrl, this.lastClient = new v(this.serverUrl), this.loggedIn = !1), this.lastClient;
   }
   setStatus(t) {
     this.statusEl && (this.statusEl.textContent = t), this.dispatchEvent(new CustomEvent("af-status", { detail: { status: t }, bubbles: !0, composed: !0 }));
@@ -240,8 +238,8 @@ class x extends HTMLElement {
         const a = await s.text();
         throw new Error(`upload ${s.status}: ${a.slice(0, 120)}`);
       }
-      const i = await s.json();
-      this.setStatus(i.extracted === !1 ? "doc: extraction failed" : "doc ready"), i.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${i.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
+      const n = await s.json();
+      this.setStatus(n.extracted === !1 ? "doc: extraction failed" : "doc ready"), n.extracted === !1 && this.appendBubble(`document stored, but text extraction failed (${n.extractionError ?? "unknown"}) — server answers may ignore it`, "error");
     } catch (e) {
       this.renderError(e instanceof Error ? e.message : String(e));
     }
@@ -256,7 +254,7 @@ class x extends HTMLElement {
     };
     if (this.browserSelected())
       try {
-        this.local || (this.setStatus("browser-loading"), this.local = await v((i) => this.localStatus = i));
+        this.local || (this.setStatus("browser-loading"), this.local = await x((n) => this.localStatus = n));
         const s = await this.local.reply(r);
         this.setTier("Browser"), this.appendBubble(s, "assistant"), this.dispatchEvent(new CustomEvent("af-done", {
           detail: { conversationId: null, tier: "Browser", citations: [] },
@@ -266,17 +264,17 @@ class x extends HTMLElement {
         return;
       } catch (s) {
         this.local = null;
-        const i = s instanceof Error ? s.message : String(s);
-        this.renderError(`browser model failed: ${i} — switch the model picker to "server" or reload to retry`), e();
+        const n = s instanceof Error ? s.message : String(s);
+        this.renderError(`browser model failed: ${n} — switch the model picker to "server" or reload to retry`), e();
         return;
       }
     try {
       const s = this.ensureClient();
       !this.loggedIn && this.password && (await s.login(this.password), this.loggedIn = !0);
-      const i = this.appendBubble("", "assistant");
+      const n = this.appendBubble("", "assistant");
       this.setStatus("streaming"), await s.sendMessage(r, {
         onToken: (a) => {
-          i.textContent += a, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: a }, bubbles: !0, composed: !0 }));
+          n.textContent += a, this.transcript && (this.transcript.scrollTop = this.transcript.scrollHeight), this.dispatchEvent(new CustomEvent("af-token", { detail: { text: a }, bubbles: !0, composed: !0 }));
         },
         onDone: (a) => {
           this.setTier(a.tier), this.renderCitations(a.citations), this.dispatchEvent(new CustomEvent("af-done", { detail: a, bubbles: !0, composed: !0 }));
@@ -376,27 +374,27 @@ class x extends HTMLElement {
     r.append(e, this.tierBadge, this.statusEl, this.tierSelect), this.transcript = document.createElement("div"), this.transcript.className = "log";
     const s = document.createElement("form");
     this.input = document.createElement("input"), this.input.type = "text", this.input.placeholder = "Ask about this portfolio…", this.input.setAttribute("aria-label", "Message");
-    const i = document.createElement("button");
-    i.type = "button", i.textContent = "📎", i.title = "Upload a document (pdf/txt/md/docx) for grounded answers", i.setAttribute("aria-label", "Upload document");
+    const n = document.createElement("button");
+    n.type = "button", n.textContent = "📎", n.title = "Upload a document (pdf/txt/md/docx) for grounded answers", n.setAttribute("aria-label", "Upload document");
     const a = document.createElement("input");
-    a.type = "file", a.accept = ".pdf,.txt,.md,.docx", a.hidden = !0, i.addEventListener("click", () => a.click()), a.addEventListener("change", () => {
+    a.type = "file", a.accept = ".pdf,.txt,.md,.docx", a.hidden = !0, n.addEventListener("click", () => a.click()), a.addEventListener("change", () => {
       const l = a.files?.[0];
       l && this.upload(l), a.value = "";
     });
     const o = document.createElement("button");
-    o.type = "submit", o.textContent = "Send", s.append(this.input, i, a, o), s.addEventListener("submit", (l) => {
+    o.type = "submit", o.textContent = "Send", s.append(this.input, n, a, o), s.addEventListener("submit", (l) => {
       l.preventDefault(), this.send();
     }), this.shadowRoot.append(r, this.transcript, s);
   }
 }
-customElements.get("agentfolio-chat") || customElements.define("agentfolio-chat", x);
+customElements.get("agentfolio-chat") || customElements.define("agentfolio-chat", w);
 export {
-  x as AgentFolioChatElement,
-  g as AgentFolioClient,
-  f as SseParser,
+  w as AgentFolioChatElement,
+  v as AgentFolioClient,
+  m as SseParser,
   b as hasWebGPU,
-  v as loadLocalChat,
+  x as loadLocalChat,
   h as parseFrame,
-  m as parsePayload
+  g as parsePayload
 };
 //# sourceMappingURL=index.js.map

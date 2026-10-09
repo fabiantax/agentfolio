@@ -22,6 +22,18 @@ type Pipeline = (messages: Array<{ role: string; content: string }>, opts: unkno
 
 let pipePromise: Promise<Pipeline> | null = null;
 
+
+/**
+ * Same-origin URL of the vendor chunk. Derives from import.meta.url at runtime
+ * (served as /web/chat-core/index.js) — NEVER a static specifier: Vite lib-mode
+ * inlines `new URL('./x.js', import.meta.url)` into a base64 data: URL of the
+ * SOURCE (verified in dist), which is unusable as a module path.
+ */
+function vendorUrl(): string {
+  const here = import.meta.url; // .../web/chat-core/index.js
+  return here.slice(0, here.lastIndexOf('/') + 1) + 'transformers-vendor.js';
+}
+
 /** Lazily load transformers.js + the q4 LFM2-350M ONNX weights. */
 export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promise<LocalChat> {
   if (!hasWebGPU()) throw new Error('WebGPU unavailable');
@@ -31,9 +43,7 @@ export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promis
       // Same-origin vendor chunk (browser-local-ml skill: never a CDN —
       // content blockers kill cross-origin dynamic imports before any request
       // leaves the device, and Safari reports only "Load failed").
-      const mod = await import(
-        /* @vite-ignore */ new URL('./transformers-vendor.js', import.meta.url).href
-      );
+      const mod = await import(vendorUrl());
       mod.env.allowLocalModels = false;
       mod.env.backends.onnx.wasm.wasmPaths = new URL('./dist/', import.meta.url).href;
       const pipe = await mod.pipeline(
@@ -62,9 +72,7 @@ export async function loadLocalChat(onStatus?: (s: LocalStatus) => void): Promis
   return {
     async reply(message: string): Promise<string> {
       let final = '';
-      const hf = await import(
-        /* @vite-ignore */ new URL('./transformers-vendor.js', import.meta.url).href
-      );
+      const hf = await import(vendorUrl());
       const streamer = new hf.TextStreamer(
         (pipe as unknown as { tokenizer: unknown }).tokenizer as never,
         { skip_prompt: true, skip_special_tokens: true, on_final_text: (t: string) => { final += t; } },
