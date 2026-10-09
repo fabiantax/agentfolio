@@ -20,8 +20,20 @@ COPY src/Slices/Auth2/Slices.Auth2.csproj src/Slices/Auth2/
 COPY src/Slices/Uploads/Slices.Uploads.csproj src/Slices/Uploads/
 COPY src/Slices/Share/Slices.Share.csproj src/Slices/Share/
 COPY src/Slices/Stars/Slices.Stars.csproj src/Slices/Stars/
-RUN dotnet restore src/AgentFolio.Api/AgentFolio.Api.csproj
+COPY src/AgentFolio.Sandbox/AgentFolio.Sandbox.Extractor/AgentFolio.Sandbox.Extractor.csproj \
+     src/AgentFolio.Sandbox/AgentFolio.Sandbox.Extractor/
+RUN dotnet restore src/AgentFolio.Api/AgentFolio.Api.csproj \
+    && dotnet restore src/AgentFolio.Sandbox/AgentFolio.Sandbox.Extractor/AgentFolio.Sandbox.Extractor.csproj
 COPY src/ ./src/
+# Process-isolated extraction sandbox (spec 002 s4-04): untrusted upload bytes are
+# parsed by AgentFolio.Sandbox.Extractor, spawned by ExtractionService at
+# AGENTFOLIO_SANDBOX_EXTRACTOR (default /app/sandbox/AgentFolio.Sandbox.Extractor.dll).
+# Without it every upload stores fine but extraction fails (exit 155, dll missing).
+RUN dotnet publish src/AgentFolio.Sandbox/AgentFolio.Sandbox.Extractor/AgentFolio.Sandbox.Extractor.csproj \
+    -c Release \
+    -o /app/sandbox \
+    --no-restore \
+    --nologo
 RUN dotnet publish src/AgentFolio.Api/AgentFolio.Api.csproj \
     -c Release \
     -o /app/publish \
