@@ -29,7 +29,8 @@ public class EnrichedRecallProviderTests
 
         Assert.NotEmpty(hits);
         Assert.Equal("woodpecker-ci/woodpecker", hits[0].RepoFullName);
-        Assert.True(hits[0].Score >= 2); // 'ci/cd' + 'self-hosted' both hit the hay
+        // Score is an IDF sum (#110): both terms df=1 of N=2 -> 2*log(3/2) ≈ 0.81.
+        Assert.True(hits[0].Score > 0.5);
     }
 
     [Fact]
@@ -103,6 +104,30 @@ public class EnrichedRecallProviderTests
         var hits = await provider.RecallAsync("devops self-hosted", topN: 5);
 
         var hit = Assert.Single(hits);
-        Assert.True(hit.Score >= 2);
+        // IDF sum (#110): both terms df=1 of N=1... log(2/2)=0 raw, but (N+1)/(1+df)
+        // = 2/2 = 0 with one repo; membership is raw-hits, order by idf — just
+        // assert the hit exists (contract: topics count as hay).
+        Assert.NotNull(hit);
+    }
+
+    [Fact]
+    public async Task Recall_idf_weights_rare_terms_above_common_ones()
+    {
+        // #110: at enriched-corpus scale, tie-density drowns targets under a
+        // plain term-count. IDF (log(N/(1+df))) must rank the repo matching the
+        // RARE term above repos matching only the COMMON one, even when the
+        // common repo contains the term twice in more repos.
+        var provider = new EnrichedRecallProvider(_ => Task.FromResult<IReadOnlyList<EnrichedRepo>>(new[]
+        {
+            Repo(1, "common/one", desc: "a data tool"),
+            Repo(2, "common/two", desc: "another data thing"),
+            Repo(3, "common/three", desc: "yet more data"),
+            Repo(4, "rare/match", desc: "woodpecker birdhouse construction"),
+        }));
+
+        var hits = await provider.RecallAsync("data woodpecker", topN: 5);
+
+        Assert.NotEmpty(hits);
+        Assert.Equal("rare/match", hits[0].RepoFullName);
     }
 }
