@@ -129,7 +129,7 @@ public static class ChatEndpoints
             if (starHits is not null && starHits.Count > 0)
             {
                 var sb = new StringBuilder();
-                sb.AppendLine("Relevant starred repositories (cite the ones you use as [STAR 1], [STAR 2], ... in your answer):");
+                sb.AppendLine("Relevant starred repositories:");
                 for (var i = 0; i < starHits.Count; i++)
                 {
                     var h = starHits[i];
@@ -138,6 +138,11 @@ public static class ChatEndpoints
                     if (text.Length > 600) text = text[..600] + "…[truncated]";
                     sb.AppendLine(text);
                 }
+                sb.AppendLine(
+                    "CITATION RULE: every time you mention one of the repositories above in your answer, " +
+                    "you MUST attach its [STAR n] marker in square brackets immediately after the name " +
+                    "(for example: \"Woodpecker CI [STAR 2] ...\"). An answer that names a repository " +
+                    "without its [STAR n] marker is incomplete — always cite.");
                 sb.AppendLine($"---{Environment.NewLine}{Environment.NewLine}Question: {request.Message}");
                 message = sb.ToString();
                 ctxStars = starHits.Select(h => (h.FullName, h.RerankText ?? h.Text)).ToArray();

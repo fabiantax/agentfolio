@@ -472,6 +472,34 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_stars USING vec0(
             yield return new StarredRepoRecord(s.RepoId, s.FullName, s.Description, s.TopicsJson, s.StarredAt);
     }
 
+    /// <summary>#123: enriched rows for the recall/rerank hay (stars_raw ⋈ stars).
+    /// Rows with no projection match are skipped (name comes from the projection).</summary>
+    public async Task<System.Collections.Generic.IReadOnlyList<StarsEnrichedRow>> GetStarsEnrichedAsync(
+        CancellationToken ct = default)
+    {
+        var rows = new System.Collections.Generic.List<StarsEnrichedRow>();
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT sr.RepoId, s.FullName, s.Description, s.TopicsJson, sr.UseFor, sr.ProblemsJson
+            FROM stars_raw sr
+            JOIN stars s ON s.RepoId = sr.RepoId;
+            """;
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new StarsEnrichedRow(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+        return rows;
+    }
+
     public async IAsyncEnumerable<SavedPostRecord> QuerySavesAsync(
         bool includeStale = false,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)

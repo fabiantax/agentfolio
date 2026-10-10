@@ -84,9 +84,52 @@ builder.Services.AddSingleton(sp =>
 {
     var gf = Environment.GetEnvironmentVariable("GF_A2A_URL") ?? "http://100.112.37.119:50052";
     var colbert = Environment.GetEnvironmentVariable("COLBERT_URL") ?? "http://127.0.0.1:8092";
+
+    // Winner-arm recall hay (#123): the tenant's own stars_raw enrichment. Corpus
+    // db = AGENTFOLIO_CORPUS_DB, else the SINGLE tenant shard under the global
+    // db's tenants/ dir; ambiguous (multi-shard) or absent = DISABLED with a loud
+    // warning, never a guess (rule 1: no silent substitution).
+    Slices.Stars.Retrieval.EnrichedRecallProvider? enriched = null;
+    var corpusPath = Environment.GetEnvironmentVariable("AGENTFOLIO_CORPUS_DB");
+    var globalDb = Environment.GetEnvironmentVariable("AGENTFOLIO_GLOBAL_DB");
+    if (string.IsNullOrEmpty(corpusPath) && !string.IsNullOrEmpty(globalDb))
+    {
+        var tenantsDir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(globalDb))!, "tenants");
+        if (Directory.Exists(tenantsDir))
+        {
+            var shards = Directory.GetDirectories(tenantsDir)
+                .Select(d => Path.Combine(d, "data.db"))
+                .Where(File.Exists)
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            if (shards.Count == 1)
+                corpusPath = shards[0];
+            else if (shards.Count > 1)
+                Console.Error.WriteLine(
+                    $"WARNING: AGENTFOLIO_CORPUS_DB unset and {shards.Count} tenant shards found — enriched stars recall DISABLED (ambiguous corpus).");
+        }
+    }
+    if (!string.IsNullOrEmpty(corpusPath))
+    {
+        var corpusDb = corpusPath;
+        enriched = new Slices.Stars.Retrieval.EnrichedRecallProvider(async ct =>
+        {
+            var store = new AgentFolio.Platform.SqliteStore(corpusDb);
+            var rows = await store.GetStarsEnrichedAsync(ct).ConfigureAwait(false);
+            return rows.Select(r => new Slices.Stars.Retrieval.EnrichedRepo(
+                r.RepoId, r.FullName, r.Description, r.TopicsJson, r.UseFor, r.ProblemsJson)).ToList();
+        });
+    }
+    else
+    {
+        Console.Error.WriteLine(
+            "WARNING: stars corpus db not resolved (AGENTFOLIO_CORPUS_DB unset, no single tenant shard) — enriched recall DISABLED, GF-only retrieval.");
+    }
+
     return new Slices.Stars.Retrieval.StarsSearchAdapter(
         new Slices.Stars.Retrieval.StarsRetrievalClient(gf),
-        new Slices.Stars.Retrieval.ColbertReranker(colbert));
+        new Slices.Stars.Retrieval.ColbertReranker(colbert),
+        enrichedRecall: enriched);
 });
 builder.Services.AddSingleton<AgentFolio.Contracts.IStarsSearch>(sp =>
     sp.GetRequiredService<Slices.Stars.Retrieval.StarsSearchAdapter>());

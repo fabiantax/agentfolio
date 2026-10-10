@@ -67,6 +67,12 @@ public interface IItemStore
     Task<long> StarsGraphNodeNextIdAsync(long seedFloor, CancellationToken ct = default)
         => throw new NotSupportedException("store has no stars_raw support");
 
+    /// <summary>#123: every enriched repo row (description + topics + use_for +
+    /// problems) joined to its projection name — the recall/rerank hay. Read-only;
+    /// stores without stars_raw fail loud.</summary>
+    Task<System.Collections.Generic.IReadOnlyList<StarsEnrichedRow>> GetStarsEnrichedAsync(CancellationToken ct = default)
+        => throw new NotSupportedException("store has no stars_raw support");
+
     Task UpsertSaveAsync(SavedPostRecord post, CancellationToken ct = default);
     IAsyncEnumerable<StarredRepoRecord> QueryStarsAsync(CancellationToken ct = default);
     IAsyncEnumerable<SavedPostRecord> QuerySavesAsync(bool includeStale = false, CancellationToken ct = default);
