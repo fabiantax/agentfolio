@@ -143,6 +143,13 @@ public static class ChatEndpoints
                     "you MUST attach its [STAR n] marker in square brackets immediately after the name " +
                     "(for example: \"Woodpecker CI [STAR 2] ...\"). An answer that names a repository " +
                     "without its [STAR n] marker is incomplete — always cite.");
+                sb.AppendLine(
+                    "ANSWER RULE: the starred repositories above were retrieved for this exact question. " +
+                    "Before saying that none of them fit, re-read each description and choose the CLOSEST " +
+                    "match — \"none of them\" is only allowed when NO entry plausibly relates to the " +
+                    "question's domain. If two entries could fit, pick the one whose description matches " +
+                    "the question's core requirement (e.g. for a CI/CD tool pick the repo whose " +
+                    "description names CI/CD, not a general app platform).");
                 sb.AppendLine($"---{Environment.NewLine}{Environment.NewLine}Question: {request.Message}");
                 message = sb.ToString();
                 ctxStars = starHits.Select(h => (h.FullName, h.RerankText ?? h.Text)).ToArray();
