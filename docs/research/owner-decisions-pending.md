@@ -16,5 +16,6 @@ unparks. Bulk format: pick + why per item; owner approves or overrides in one re
 
 ## Ruled (for the record)
 
+- 2026-10-11: **#6 ruled (i)** by owner — 8/10 live + 9/10 retrieval-level accepted as the M270 eval bar; q09 (eval-vocabulary) + q10 (answer-layer variance) documented as residuals on preview-gate#123, not blockers.
 - 2026-09-28: GraphFusion stays the retrieval store for #66 stage C (#66 comment 77005).
 - 2026-09-28: /stars page size 100 (clamped 1..500) — merged #68.
