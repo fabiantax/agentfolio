@@ -486,3 +486,12 @@ $RECYCLE.BIN/
 # skillopt run configs carry API keys + outputs copy them — never track
 .skillopt/
 outputs/
+
+# agent/loop working state — never track (data dirs live on, gitignore-only)
+.agents/
+.claude/
+.karter/
+.loopit/
+.scratch/
+cover-report/
+skills-lock.json

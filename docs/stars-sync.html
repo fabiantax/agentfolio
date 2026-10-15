@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentfolio — how stars are synced</title>
+<style>
+  :root {
+    --bg: #0D1117; --surface: #151B23; --raised: #1C2430; --border: #2A3441;
+    --text: #E6EDF3; --text2: #8B949E; --accent: #4493F8; --green: #3FB950;
+    --amber: #D29922; --red: #F85149; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.6 -apple-system, 'Segoe UI', Inter, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h1 .accent { color: var(--accent); }
+  .sub { color: var(--text2); margin: 0 0 32px; }
+  h2 { font-size: 18px; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+  .card p { margin: 0; font-size: 13px; color: var(--text2); }
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 16px 0; }
+  .step { flex: 1 1 150px; background: var(--raised); border: 1px solid var(--border); border-radius: 8px;
+          padding: 10px 12px; font-size: 12.5px; }
+  .step b { display: block; color: var(--accent); font-size: 12px; margin-bottom: 4px; }
+  .arrow { align-self: center; color: var(--text2); font-size: 16px; }
+  .warn { background: rgba(210,153,34,.08); border: 1px solid rgba(210,153,34,.45); border-radius: 8px;
+          padding: 12px 16px; margin: 16px 0; font-size: 13.5px; }
+  .warn b { color: var(--amber); }
+  .ok { background: rgba(63,185,80,.08); border: 1px solid rgba(63,185,80,.45); border-radius: 8px;
+        padding: 12px 16px; margin: 16px 0; font-size: 13.5px; }
+  .ok b { color: var(--green); }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--raised);
+         border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; overflow-x: auto; font-size: 12.5px; }
+  pre code { background: none; border: none; padding: 0; }
+  .diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 18px; margin: 14px 0; }
+  .mermaid { display: flex; justify-content: center; }
+  footer { margin-top: 56px; color: var(--text2); font-size: 12px; border-top: 1px solid var(--border);
+           padding-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>how <span class="accent">stars</span> are synced</h1>
+  <p class="sub">agentfolio · GitHub stars → event-sourced shard → snapshot cache → cited chat answers</p>
+
+  <h2>the one-paragraph version</h2>
+  <p>A <code>POST /stars/sync</code> (owner-authenticated) triggers <code>StarsSyncService.SyncAsync</code>,
+  which pages through <code>https://api.github.com/user/starred?per_page=100</code> using the
+  <code>Link: rel="next"</code> header until exhausted. Every repo becomes a <code>star_synced</code> event
+  plus a projected row in the tenant's SQLite shard (event append + projection in <b>one transaction</b>).
+  After success, a full-fidelity JSON snapshot is written through to object storage (S3/garage) at
+  <code>tenants/{tid}/stars/snapshot.json</code> — a fresh, non-empty snapshot short-circuits the next sync
+  (default freshness 360&nbsp;min) so the demo doesn't re-crawl GitHub on every request.</p>
+
+  <h2>end-to-end flow</h2>
+  <div class="flow">
+    <div class="step"><b>1 · trigger</b>POST /stars/sync?force=1 (RequireAuthorization, owner cookie)</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>2 · cache check</b>snapshot fresh (<360 min) &amp; non-empty? → return unchanged, skip GitHub</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>3 · fetch</b>HttpGitHubStarsClient pages GitHub (per_page=100, Link-header walk, bounded per-page retry + backoff)</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>4 · diff</b>canonicalize by RepoId; skip identical (name, description, starred-at) rows</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>5 · persist</b>star_synced event + stars projection upserted in one tx per repo</div>
+    <div class="arrow">→</div>
+    <div class="step"><b>6 · snapshot</b>write-through StarsSnapshot JSON → object store, then reply with counts</div>
+  </div>
+
+  <h2>diagram — request path &amp; storage</h2>
+  <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph client["browser (owner)"]
+    A["POST /stars/sync?force=1<br/>owner auth cookie"]
+  end
+  subgraph api["AgentFolio.Api"]
+    B["StarsEndpoints<br/>/stars/sync"]
+    C["StarsSyncService<br/>.SyncAsync(ct, snapshotSink)"]
+    D["snapshot freshness check<br/>tenants/{tid}/stars/snapshot.json"]
+  end
+  subgraph gh["GitHub"]
+    E["GET /user/starred<br/>per_page=100 · Link-header walk<br/>per-page bounded retry"]
+  end
+  subgraph store["tenant shard (SQLite, per-tenant)"]
+    F[("events<br/>star_synced append")]
+    G[("stars projection<br/>RepoId · FullName ·<br/>Description · Topics · StarredAt")]
+  end
+  subgraph obj["object store (S3/garage)"]
+    H[("stars/snapshot.json<br/>full-fidelity DTO cache")]
+  end
+  A --> B
+  B --> D
+  D -- "fresh & non-empty" --> B2["return unchanged (source=cache)"]
+  D -- "stale / absent / force" --> C
+  C --> E
+  E --> C
+  C --> F
+  C --> G
+  C -- "after success" --> H
+  B -- "GET /stars" --> G
+  classDef warn fill:#1C2430,stroke:#D29922,color:#E6EDF3
+  classDef ok fill:#1C2430,stroke:#3FB950,color:#E6EDF3
+  class D warn
+  class B2 ok
+  </pre></div>
+
+  <h2>diagram — sequence (happy path with cache)</h2>
+  <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant O as Owner browser
+  participant API as /stars/sync
+  participant S as StarsSyncService
+  participant OS as Object store
+  participant GH as GitHub API
+  participant DB as Tenant shard (SQLite)
+  O->>API: POST /stars/sync (auth)
+  API->>OS: GET stars/snapshot.json
+  alt snapshot fresh (< 360 min) and non-empty
+    OS-->>API: snapshot
+    API-->>O: 200 { unchanged: N, source: "cache" }
+  else stale / absent / ?force=1
+    API->>S: SyncAsync(ct, snapshotSink)
+    loop every page (per_page=100, Link rel=next)
+      S->>GH: GET /user/starred?page=N
+      GH-->>S: 100 repos (retry + backoff on transient)
+    end
+    S->>DB: per changed repo: star_synced event + projection upsert (1 tx)
+    S->>OS: PUT stars/snapshot.json (full DTO list, SyncedAt=now)
+    S-->>API: { fetched, upserted, unchanged }
+    API-->>O: 200 { source: "github", cacheWritten: true }
+  end
+  </pre></div>
+
+  <h2>reliability properties</h2>
+  <div class="cards">
+    <div class="card"><h3>event-sourced core</h3><p>Every sync appends <code>star_synced</code> events before
+    projecting — the stars table is a replayable projection (<code>RebuildAllAsync</code>: truncate + deterministic
+    replay). The event log never grows on unchanged rows.</p></div>
+    <div class="card"><h3>per-page resilience</h3><p>Measured live: a 1000+ page fetch over ~45 min <i>will</i> hit
+    transient failures (HttpClient timeout at 46 min; truncated response at ~20 min). Each page retries in place
+    with escalating backoff — a failure no longer discards the whole fetch.</p></div>
+    <div class="card"><h3>snapshot = explicit cache</h3><p>Only a <i>fresh, non-empty</i> snapshot skips GitHub.
+    Absent, stale, or unreadable → fetch for real. <code>?force=1</code> bypasses the cache entirely.</p></div>
+    <div class="card"><h3>idempotent diffing</h3><p>Repos canonicalize by RepoId; identical rows count as
+    <code>unchanged</code> and write nothing — re-running a sync converges without churn.</p></div>
+  </div>
+
+  <div class="warn"><b>Known gap (issue #62, open):</b> the sync runs <i>inline in the HTTP request</i> with the
+  request's cancellation token. The full 57.6k-repo fetch takes 25–40 min — far beyond any HTTP client timeout —
+  so a client disconnect (measured: 499 at 292 s and at 30 s) aborts the sync mid-flight. The fix shape is
+  already proven elsewhere in the codebase (uploads): return <code>202 Accepted</code> + background job +
+  <code>GET /stars/sync/status</code>. Until then, full syncs need a client that holds the connection
+  (40-min timeout).</div>
+
+  <div class="ok"><b>Current demo state:</b> the pipeline is live and green end-to-end — verified with a real
+  docx upload and a cited chat answer; the stars count in the showcase fills the moment a full sync completes
+  (#41), which is the next queued story after #62.</div>
+
+  <h2>key code</h2>
+  <pre><code>src/Slices/Stars/StarsEndpoints.cs        — trigger, freshness pre-check, snapshot write-through
+src/Slices/Stars/StarsSyncService.cs      — fetch → diff → event+projection orchestration
+src/Slices/Stars/HttpGitHubStarsClient.cs — pagination walk + per-page bounded retry
+src/Slices/Stars/StarsSnapshot.cs         — snapshot DTO + KeyFor(tenant) = tenants/{tid}/stars/snapshot.json
+src/AgentFolio.Platform/SqliteStore.cs    — AppendThenProjectAsync: event append + projection in one tx</code></pre>
+
+  <footer>agentfolio · generated from the code at main <code>9b9b516</code> (+ star-sync sources) · 2026-09-28</footer>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#151B23',
+      primaryColor: '#1C2430',
+      primaryTextColor: '#E6EDF3',
+      primaryBorderColor: '#4493F8',
+      lineColor: '#8B949E',
+      secondaryColor: '#1C2430',
+      tertiaryColor: '#151B23',
+      fontSize: '13px'
+    },
+    flowchart: { curve: 'basis', padding: 10 },
+    sequence: { actorMargin: 34, width: 150 }
+  });
+</script>
+</body>
+</html>
